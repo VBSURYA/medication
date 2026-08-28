@@ -1,0 +1,6 @@
+{
+  "name": "Medication Reminder & Schedule Tracker",
+  "description": "Patient medication schedule manager with meal timing (before/after eating), reminders, custom dose tracking, completion status, and special condition PRN medicines.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
