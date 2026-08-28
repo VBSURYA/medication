@@ -1,6 +1,6 @@
 {
   "name": "Medication Reminder & Schedule Tracker",
-  "description": "Daily schedule manager for medications, meals (breakfast, snacks, lunch, dinner), latrine/bowel movements, and daywise clinical history logs (/history) for doctor visits with audio reminders and MongoDB persistence.",
+  "description": "Daily schedule manager for medications, meals (breakfast, snacks, lunch, dinner), latrine/bowel movements, and daywise clinical history logs (/history) for doctor visits with loud continuous audio alarms, immediate silence controls, PWA mobile installability, and MongoDB persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

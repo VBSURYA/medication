@@ -21,7 +21,10 @@ import {
   Sparkles, 
   Utensils, 
   Volume2,
-  Apple
+  Apple,
+  Smartphone,
+  Download,
+  X
 } from 'lucide-react';
 import { 
   Medication, 
@@ -57,8 +60,9 @@ import {
   getTimeSlotFromTime, 
   formatTime24to12 
 } from './utils/helpers.ts';
-import { soundManager } from './utils/audio.ts';
+import { soundManager, AlarmVolumeLevel } from './utils/audio.ts';
 import { isScheduleDue, requestBrowserNotificationPermission, sendBrowserNotification } from './utils/notification.ts';
+import { getIsInstalled } from './registerServiceWorker.ts';
 
 // Components
 import { Header } from './components/Header.tsx';
@@ -75,6 +79,7 @@ import { SkipModal } from './components/SkipModal.tsx';
 import { ActiveReminderBanner, ActiveAlert } from './components/ActiveReminderBanner.tsx';
 import { MongoStatusModal } from './components/MongoStatusModal.tsx';
 import { HistoryPage } from './components/HistoryPage.tsx';
+import { PwaInstallModal } from './components/PwaInstallPrompt.tsx';
 import { 
   fetchDbStatus, 
   fetchApiMedications, 
@@ -148,14 +153,79 @@ export default function App() {
   const [isDbModalOpen, setIsDbModalOpen] = useState(false);
   const [dbStatus, setDbStatus] = useState<DbStatusResponse | null>(null);
 
-  // 3. Active Alert State
+  // 3. Active Alert & Loud Alarm State
   const [activeAlert, setActiveAlert] = useState<ActiveAlert | null>(null);
   const alertedMinutesRef = useRef<Set<string>>(new Set());
+  const [isAlarmRinging, setIsAlarmRinging] = useState<boolean>(() => soundManager.isRinging());
+  const [volumeLevel, setVolumeLevel] = useState<AlarmVolumeLevel>(() => soundManager.getVolumeLevel());
 
-  // 4. Live Clock State
+  // 4. PWA State
+  const [isPwaModalOpen, setIsPwaModalOpen] = useState<boolean>(false);
+  const [showPwaBanner, setShowPwaBanner] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    if (getIsInstalled()) return false;
+    const isStandalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as unknown as { standalone?: boolean }).standalone === true;
+    if (isStandalone) return false;
+    return localStorage.getItem('med_pwa_banner_dismissed') !== 'true';
+  });
+
+  // Subscribe to loud alarm ringing state
+  useEffect(() => {
+    const unsubscribe = soundManager.subscribe((ringing) => {
+      setIsAlarmRinging(ringing);
+    });
+    return unsubscribe;
+  }, []);
+
+  // Global keyboard shortcut: Press Space or Escape to silence ringing alarm immediately
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.code === 'Space' || e.key === 'Escape') && soundManager.isRinging()) {
+        if (e.code === 'Space') e.preventDefault();
+        soundManager.stopAlarm();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  // Check URL parameters on mount (e.g., from PWA shortcuts)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view');
+      const actionParam = params.get('action');
+      if (viewParam === 'history') {
+        setCurrentView('history');
+      }
+      if (actionParam === 'test_alarm') {
+        setTimeout(() => {
+          handleTestReminder();
+        }, 600);
+      }
+    }
+  }, []);
+
+  // Immediate alarm stop action
+  const handleStopAlarm = () => {
+    soundManager.stopAlarm();
+  };
+
+  const handleChangeVolumeLevel = (lvl: AlarmVolumeLevel) => {
+    soundManager.setVolumeLevel(lvl);
+    setVolumeLevel(lvl);
+  };
+
+  // 5. Live Clock State
   const [currentTimeStr, setCurrentTimeStr] = useState<string>(() => {
     const d = new Date();
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  });
+  const [currentHHMM, setCurrentHHMM] = useState<string>(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   });
 
   // Keep local storage in sync
@@ -250,6 +320,7 @@ export default function App() {
       const currentHH = String(now.getHours()).padStart(2, '0');
       const currentMM = String(now.getMinutes()).padStart(2, '0');
       const currentHHMM = `${currentHH}:${currentMM}`;
+      setCurrentHHMM((prev) => (prev !== currentHHMM ? currentHHMM : prev));
       const today = getTodayDateString();
 
       // Check each minute once
@@ -282,7 +353,7 @@ export default function App() {
                 });
 
                 if (soundEnabled && sch.soundEnabled) {
-                  soundManager.playReminderAlert();
+                  soundManager.startLoudAlarmLoop();
                 }
 
                 sendBrowserNotification(
@@ -303,7 +374,7 @@ export default function App() {
             );
             if (!isAlreadyDone) {
               if (soundEnabled) {
-                soundManager.playReminderAlert();
+                soundManager.startLoudAlarmLoop();
               }
               sendBrowserNotification(
                 `Routine & Meal Notice: ${r.title}`,
@@ -663,10 +734,15 @@ export default function App() {
     apiSaveRoutineLog(log).catch(() => {});
   };
 
-  // Test Alarm Simulator
+  // Test Alarm Simulator (Runs loud continuous alarm loop so patient can test & stop immediately)
   const handleTestReminder = () => {
     requestBrowserNotificationPermission();
-    // Pick the first available regular med schedule or fallback
+    if (soundManager.isRinging()) {
+      soundManager.stopAlarm();
+      return;
+    }
+
+    // Pick the first available regular med schedule or generate a realistic test dose
     const regularMed = medications.find((m) => !m.isSpecialCondition && m.schedules.length > 0);
     if (regularMed && regularMed.schedules[0]) {
       setActiveAlert({
@@ -675,12 +751,39 @@ export default function App() {
         schedule: regularMed.schedules[0],
         dueTime: regularMed.schedules[0].time,
       });
-      if (soundEnabled) {
-        soundManager.playReminderAlert();
-      }
     } else {
-      soundManager.playTestTone();
-      alert('Reminder chime tested! Add a scheduled medication or meal to test the alarm.');
+      const simulatedMed: Medication = {
+        id: 'test-med-001',
+        name: 'Daily Morning Tablet',
+        dosage: '10mg (1 Tablet)',
+        form: 'tablet',
+        color: 'teal',
+        instructions: 'Take 30 mins before breakfast with a glass of water',
+        isSpecialCondition: false,
+        createdAt: new Date().toISOString(),
+        schedules: [
+          {
+            id: 'test-sch-001',
+            time: currentHHMM,
+            slot: 'morning',
+            mealRelation: 'before_meal',
+            mealName: 'Breakfast',
+            reminderEnabled: true,
+            reminderMinutesBefore: 0,
+            soundEnabled: true,
+          }
+        ],
+      };
+      setActiveAlert({
+        id: `test-alert-${Date.now()}`,
+        medication: simulatedMed,
+        schedule: simulatedMed.schedules[0],
+        dueTime: simulatedMed.schedules[0].time,
+      });
+    }
+
+    if (soundEnabled) {
+      soundManager.startLoudAlarmLoop();
     }
   };
 
@@ -843,6 +946,11 @@ export default function App() {
         currentView={currentView}
         onViewChange={handleViewChange}
         historyCount={logs.filter(l => l.status === 'taken').length + routineLogs.filter(rl => rl.status === 'completed').length}
+        isAlarmRinging={isAlarmRinging}
+        onStopAlarm={handleStopAlarm}
+        onOpenPwaModal={() => setIsPwaModalOpen(true)}
+        volumeLevel={volumeLevel}
+        onChangeVolumeLevel={handleChangeVolumeLevel}
       />
 
       {/* 2. Main View Switcher: History Page vs Daily Schedule Timeline */}
@@ -859,12 +967,62 @@ export default function App() {
       ) : (
         <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 space-y-6">
         
+        {/* PWA Mobile Installation Banner (Dismissible) */}
+        {showPwaBanner && (
+          <div
+            id="banner-pwa-install"
+            className="bg-gradient-to-r from-teal-900 via-teal-800 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-sm border border-teal-600/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+          >
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 text-teal-300 flex items-center justify-center shrink-0">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white">Install MedSchedule Mobile App</h4>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-teal-400/20 text-teal-300 border border-teal-400/30">
+                    PWA
+                  </span>
+                </div>
+                <p className="text-xs text-teal-100/80 mt-0.5">
+                  Install on your Android or iPhone for loud continuous medication alarms, phone vibration, and instant 1-tap access.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                id="btn-banner-install-app"
+                type="button"
+                onClick={() => setIsPwaModalOpen(true)}
+                className="px-3.5 py-2 rounded-xl bg-teal-400 hover:bg-teal-300 text-slate-950 text-xs font-black shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Install on Phone</span>
+              </button>
+              <button
+                id="btn-banner-dismiss-pwa"
+                type="button"
+                onClick={() => {
+                  setShowPwaBanner(false);
+                  localStorage.setItem('med_pwa_banner_dismissed', 'true');
+                }}
+                className="p-2 text-teal-300 hover:text-white rounded-lg transition-colors cursor-pointer"
+                aria-label="Dismiss banner"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Top Progress & Daily Regimen Overview */}
         <DailyOverview
           items={dailyItems}
           routineItems={dailyRoutineItems}
           specialMedsCount={specialMedications.length}
           activeFilter={activeFilter}
+          currentDate={currentDate}
+          currentHHMM={currentHHMM}
           onFilterChange={setActiveFilter}
           onQuickTakeDose={(item) => handleUpdateDoseStatus(item, 'taken')}
           onQuickCompleteRoutine={(routineItem) => handleToggleRoutine(routineItem)}
@@ -1162,7 +1320,10 @@ export default function App() {
       {/* 3. Floating Active Reminder Toast (When medication is due right now) */}
       <ActiveReminderBanner
         alert={activeAlert}
+        isAlarmRinging={isAlarmRinging}
+        onStopAlarm={handleStopAlarm}
         onTakeNow={(alt) => {
+          handleStopAlarm();
           const doseItem = dailyItems.find(
             (d) => d.medication.id === alt.medication.id && d.schedule?.id === alt.schedule.id
           );
@@ -1172,16 +1333,26 @@ export default function App() {
           setActiveAlert(null);
         }}
         onSnooze={(alt) => {
+          handleStopAlarm();
           setActiveAlert(null);
           // Re-trigger alert in 10 minutes
           setTimeout(() => {
             setActiveAlert(alt);
             if (soundEnabled) {
-              soundManager.playReminderAlert();
+              soundManager.startLoudAlarmLoop();
             }
           }, 10 * 60 * 1000);
         }}
-        onDismiss={() => setActiveAlert(null)}
+        onDismiss={() => {
+          handleStopAlarm();
+          setActiveAlert(null);
+        }}
+      />
+
+      {/* PWA Mobile Installation Modal */}
+      <PwaInstallModal
+        isOpen={isPwaModalOpen}
+        onClose={() => setIsPwaModalOpen(false)}
       />
 
       {/* 4. Modals */}
