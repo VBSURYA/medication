@@ -294,6 +294,7 @@ export const RoutineModal: React.FC<RoutineModalProps> = ({
                 <option value="vitals">Health Check (Blood Pressure, Sugar)</option>
                 <option value="activity">Exercise / Walk / Stretching</option>
                 <option value="sleep">Sleep & Bedtime Routine</option>
+                <option value="latrine">Latrine / Bathroom</option>
                 <option value="other">General Routine</option>
               </select>
             </div>

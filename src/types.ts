@@ -85,7 +85,8 @@ export type RoutineCategory =
   | 'hydration' 
   | 'vitals' 
   | 'activity' 
-  | 'sleep' 
+  | 'sleep'
+  | 'latrine' 
   | 'other';
 
 export interface RoutineItem {
