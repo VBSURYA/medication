@@ -12,7 +12,8 @@ import {
   Sparkles,
   Edit2,
   Trash2,
-  RotateCcw
+  RotateCcw,
+  Activity
 } from 'lucide-react';
 import { DailyRoutineItem, RoutineStatus } from '../types.ts';
 import { formatTime24to12 } from '../utils/helpers.ts';
@@ -108,6 +109,16 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
           text: 'text-purple-800',
           accent: 'bg-purple-600 hover:bg-purple-700',
           pillBg: 'bg-purple-100/80 border-purple-300 text-purple-900',
+        };
+      case 'bathroom':
+        return {
+          label: 'Latrine / Bowel Movement',
+          icon: <Activity className="w-5 h-5" />,
+          lightBg: 'bg-teal-50',
+          border: 'border-teal-200',
+          text: 'text-teal-900',
+          accent: 'bg-teal-700 hover:bg-teal-800',
+          pillBg: 'bg-teal-100/80 border-teal-300 text-teal-950',
         };
       default:
         return {

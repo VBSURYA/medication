@@ -1,6 +1,11 @@
 import { MongoClient, Db, Collection } from 'mongodb';
 import { Medication, DoseLog, RoutineItem, RoutineLog } from '../src/types.ts';
-import { INITIAL_SAMPLE_MEDICATIONS, INITIAL_SAMPLE_ROUTINES } from '../src/utils/storage.ts';
+import { 
+  INITIAL_SAMPLE_MEDICATIONS, 
+  INITIAL_SAMPLE_ROUTINES,
+  generateDefaultSampleDoseLogs,
+  generateDefaultSampleRoutineLogs
+} from '../src/utils/storage.ts';
 
 interface DbStatus {
   connected: boolean;
@@ -23,31 +28,9 @@ let connectionError: string | null = null;
 // In-memory fallback cache to ensure zero crashes and instant readiness
 // before the user configures MONGODB_URI in .env.local
 let inMemoryMedications: Medication[] = [...INITIAL_SAMPLE_MEDICATIONS];
-let inMemoryLogs: DoseLog[] = [
-  {
-    id: 'log-seed-1',
-    date: new Date().toISOString().split('T')[0],
-    medicationId: 'med-1',
-    scheduleId: 'sch-1-1',
-    scheduledTime: '07:00',
-    mealRelation: 'before_meal',
-    mealName: 'Breakfast',
-    status: 'taken',
-    takenAt: `${new Date().toISOString().split('T')[0]}T07:05:00`,
-    notes: 'Taken before breakfast with 250ml water',
-  },
-];
+let inMemoryLogs: DoseLog[] = generateDefaultSampleDoseLogs();
 let inMemoryRoutines: RoutineItem[] = [...INITIAL_SAMPLE_ROUTINES];
-let inMemoryRoutineLogs: RoutineLog[] = [
-  {
-    id: 'routine-log-seed-1',
-    routineId: 'routine-1',
-    date: new Date().toISOString().split('T')[0],
-    status: 'completed',
-    completedAt: `${new Date().toISOString().split('T')[0]}T06:20:00`,
-    notes: 'Had oatmeal with blueberries and warm lemon water',
-  },
-];
+let inMemoryRoutineLogs: RoutineLog[] = generateDefaultSampleRoutineLogs();
 
 /**
  * Lazy, fail-safe connection to MongoDB.

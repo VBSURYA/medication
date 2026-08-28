@@ -47,6 +47,8 @@ import {
   saveRoutineLogs,
   getDailyRoutineItems,
   INITIAL_SAMPLE_ROUTINES,
+  generateDefaultSampleDoseLogs,
+  generateDefaultSampleRoutineLogs,
   getReminderSettings,
   saveReminderSettings
 } from './utils/storage.ts';
@@ -72,6 +74,7 @@ import { SpecialDoseModal } from './components/SpecialDoseModal.tsx';
 import { SkipModal } from './components/SkipModal.tsx';
 import { ActiveReminderBanner, ActiveAlert } from './components/ActiveReminderBanner.tsx';
 import { MongoStatusModal } from './components/MongoStatusModal.tsx';
+import { HistoryPage } from './components/HistoryPage.tsx';
 import { 
   fetchDbStatus, 
   fetchApiMedications, 
@@ -101,6 +104,35 @@ export default function App() {
   const [currentDate, setCurrentDate] = useState<string>(() => getTodayDateString());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getReminderSettings().soundEnabled);
   const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
+
+  // View state: 'daily' vs 'history' (/history page)
+  const [currentView, setCurrentView] = useState<'daily' | 'history'>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname === '/history') {
+      return 'history';
+    }
+    return 'daily';
+  });
+
+  // Keep URL in sync with view
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.location.pathname === '/history') {
+        setCurrentView('history');
+      } else {
+        setCurrentView('daily');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleViewChange = (view: 'daily' | 'history') => {
+    setCurrentView(view);
+    const targetPath = view === 'history' ? '/history' : '/';
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
+  };
 
   // 2. Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -157,7 +189,7 @@ export default function App() {
           saveMedications(apiMeds);
         }
 
-        const apiLogs = await fetchApiLogs(currentDate);
+        const apiLogs = await fetchApiLogs();
         if (mounted && apiLogs && apiLogs.length > 0) {
           setLogs((prev) => {
             const merged = [...apiLogs];
@@ -176,7 +208,7 @@ export default function App() {
           saveRoutines(apiRoutinesData);
         }
 
-        const apiRLogs = await fetchApiRoutineLogs(currentDate);
+        const apiRLogs = await fetchApiRoutineLogs();
         if (mounted && apiRLogs && apiRLogs.length > 0) {
           setRoutineLogs((prev) => {
             const merged = [...apiRLogs];
@@ -580,34 +612,55 @@ export default function App() {
     localStorage.removeItem('med_reminder_routine_logs_v1');
     setMedications(INITIAL_SAMPLE_MEDICATIONS);
     setRoutines(INITIAL_SAMPLE_ROUTINES);
-    const today = getTodayDateString();
-    const seededLogs: DoseLog[] = [
-      {
-        id: `log-seed-1`,
-        date: today,
-        medicationId: 'med-1',
-        scheduleId: 'sch-1-1',
-        scheduledTime: '07:00',
-        mealRelation: 'before_meal',
-        mealName: 'Breakfast',
-        status: 'taken',
-        takenAt: `${today}T07:05:00`,
-        notes: 'Taken before breakfast with 250ml water',
-      },
-    ];
-    const seededRoutineLogs: RoutineLog[] = [
-      {
-        id: 'routine-log-seed-1',
-        routineId: 'routine-1',
-        date: today,
-        status: 'completed',
-        completedAt: `${today}T06:20:00`,
-        notes: 'Had oatmeal with blueberries and warm lemon water',
-      },
-    ];
+    const seededLogs = generateDefaultSampleDoseLogs();
+    const seededRoutineLogs = generateDefaultSampleRoutineLogs();
     setLogs(seededLogs);
     setRoutineLogs(seededRoutineLogs);
+    saveLogs(seededLogs);
+    saveRoutineLogs(seededRoutineLogs);
     apiResetSamples().catch(() => {});
+  };
+
+  // Direct Clinical History log persistence handlers
+  const handleSaveHistoryDoseLog = (log: DoseLog) => {
+    setLogs((prev) => {
+      const idx = prev.findIndex((l) => l.id === log.id);
+      let updated: DoseLog[];
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx] = log;
+      } else {
+        updated = [...prev, log];
+      }
+      saveLogs(updated);
+      return updated;
+    });
+    apiSaveDoseLog(log).catch(() => {});
+  };
+
+  const handleSaveHistoryRoutineLog = (log: RoutineLog, newRoutine?: RoutineItem) => {
+    if (newRoutine) {
+      setRoutines((prev) => {
+        const next = [...prev, newRoutine];
+        saveRoutines(next);
+        return next;
+      });
+      apiSaveRoutine(newRoutine).catch(() => {});
+    }
+
+    setRoutineLogs((prev) => {
+      const idx = prev.findIndex((l) => l.id === log.id);
+      let updated: RoutineLog[];
+      if (idx >= 0) {
+        updated = [...prev];
+        updated[idx] = log;
+      } else {
+        updated = [...prev, log];
+      }
+      saveRoutineLogs(updated);
+      return updated;
+    });
+    apiSaveRoutineLog(log).catch(() => {});
   };
 
   // Test Alarm Simulator
@@ -787,10 +840,24 @@ export default function App() {
         onTestReminder={handleTestReminder}
         onOpenDbModal={() => setIsDbModalOpen(true)}
         dbStatus={dbStatus}
+        currentView={currentView}
+        onViewChange={handleViewChange}
+        historyCount={logs.filter(l => l.status === 'taken').length + routineLogs.filter(rl => rl.status === 'completed').length}
       />
 
-      {/* 2. Main Page Layout */}
-      <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 space-y-6">
+      {/* 2. Main View Switcher: History Page vs Daily Schedule Timeline */}
+      {currentView === 'history' ? (
+        <HistoryPage
+          medications={medications}
+          doseLogs={logs}
+          routines={routines}
+          routineLogs={routineLogs}
+          onNavigateHome={() => handleViewChange('daily')}
+          onSaveDoseLog={handleSaveHistoryDoseLog}
+          onSaveRoutineLog={handleSaveHistoryRoutineLog}
+        />
+      ) : (
+        <main className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex-1 space-y-6">
         
         {/* Top Progress & Daily Regimen Overview */}
         <DailyOverview
@@ -1060,6 +1127,28 @@ export default function App() {
                     </div>
                   </div>
                 </button>
+
+                {/* View Clinical History Page Button */}
+                <button
+                  id="btn-sidebar-view-history"
+                  type="button"
+                  onClick={() => handleViewChange('history')}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-teal-200 hover:border-teal-300 hover:bg-teal-50/70 text-left transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition-colors">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <span>Clinical History Log</span>
+                        <span className="text-[10px] px-1.5 py-0.5 bg-teal-100 text-teal-800 rounded font-semibold">/history</span>
+                      </p>
+                      <p className="text-[11px] text-slate-500">Daywise logs of medicine, food & latrine for doctor</p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-bold text-teal-700 group-hover:translate-x-0.5 transition-transform">→</span>
+                </button>
               </div>
             </div>
 
@@ -1068,6 +1157,7 @@ export default function App() {
         </div>
 
       </main>
+      )}
 
       {/* 3. Floating Active Reminder Toast (When medication is due right now) */}
       <ActiveReminderBanner
