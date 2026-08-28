@@ -11,7 +11,8 @@ import {
   BellOff, 
   Volume2,
   Database,
-  Utensils
+  Utensils,
+  Clock
 } from 'lucide-react';
 import { formatDisplayDate, getTodayDateString } from '../utils/helpers.ts';
 import { soundManager } from '../utils/audio.ts';
@@ -30,6 +31,9 @@ interface HeaderProps {
   onTestReminder: () => void;
   onOpenDbModal?: () => void;
   dbStatus?: DbStatusResponse | null;
+  currentView?: 'daily' | 'history';
+  onViewChange?: (view: 'daily' | 'history') => void;
+  historyCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -45,6 +49,9 @@ export const Header: React.FC<HeaderProps> = ({
   onTestReminder,
   onOpenDbModal,
   dbStatus,
+  currentView = 'daily',
+  onViewChange,
+  historyCount,
 }) => {
   const today = getTodayDateString();
   const isToday = currentDate === today;
@@ -90,6 +97,19 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Mobile Actions Right */}
             <div className="flex items-center gap-1.5 md:hidden">
+              <button
+                id="btn-nav-history-mobile-icon"
+                type="button"
+                onClick={() => onViewChange?.(currentView === 'daily' ? 'history' : 'daily')}
+                title={currentView === 'daily' ? 'View Clinical History' : 'View Daily Schedule'}
+                className={`p-2 rounded-lg border text-xs font-medium transition-colors ${
+                  currentView === 'history'
+                    ? 'bg-teal-700 text-white border-teal-700'
+                    : 'bg-teal-50 border-teal-200 text-teal-800'
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+              </button>
               {onOpenDbModal && (
                 <button
                   id="btn-mongo-status-mobile"
@@ -145,51 +165,99 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Date Selector & Clock */}
-          <div className="flex items-center justify-between md:justify-center gap-2 bg-slate-50/80 p-1.5 rounded-xl border border-slate-200/80">
-            <div className="flex items-center gap-1">
+          {/* Desktop Navigation Switcher & Date Controls */}
+          <div className="flex items-center justify-between md:justify-center gap-2.5">
+            
+            {/* View Switcher: Daily Schedule vs Clinical History */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
               <button
-                id="btn-prev-date"
+                id="nav-tab-daily"
                 type="button"
-                onClick={handlePrevDay}
-                aria-label="Previous day"
-                className="p-1.5 rounded-lg text-slate-600 hover:bg-white hover:shadow-xs transition-all"
+                onClick={() => onViewChange?.('daily')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  currentView === 'daily'
+                    ? 'bg-white text-teal-900 shadow-2xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <ChevronLeft className="w-4 h-4" />
+                <Calendar className="w-3.5 h-3.5 text-teal-600" />
+                <span>Today's Schedule</span>
               </button>
-              
-              <div className="flex items-center gap-2 px-2.5 py-1">
-                <Calendar className="w-4 h-4 text-teal-600 shrink-0" />
-                <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">
-                  {formatDisplayDate(currentDate)}
-                </span>
-              </div>
 
               <button
-                id="btn-next-date"
+                id="nav-tab-history"
                 type="button"
-                onClick={handleNextDay}
-                aria-label="Next day"
-                className="p-1.5 rounded-lg text-slate-600 hover:bg-white hover:shadow-xs transition-all"
+                onClick={() => onViewChange?.('history')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  currentView === 'history'
+                    ? 'bg-teal-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                <ChevronRight className="w-4 h-4" />
+                <Clock className="w-3.5 h-3.5" />
+                <span>Clinical History</span>
+                {typeof historyCount === 'number' && historyCount > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    currentView === 'history' ? 'bg-teal-900 text-teal-100' : 'bg-teal-100 text-teal-800'
+                  }`}>
+                    {historyCount}
+                  </span>
+                )}
               </button>
             </div>
 
-            {!isToday && (
-              <button
-                id="btn-jump-today"
-                type="button"
-                onClick={handleSetToday}
-                className="text-xs font-medium bg-teal-100/70 hover:bg-teal-200/70 text-teal-800 px-2 py-1 rounded-md transition-colors"
-              >
-                Jump to Today
-              </button>
+            {/* Date Selector & Clock (Active in Daily view) */}
+            {currentView === 'daily' && (
+              <div className="flex items-center gap-1 bg-slate-50/80 p-1 rounded-xl border border-slate-200/80">
+                <button
+                  id="btn-prev-date"
+                  type="button"
+                  onClick={handlePrevDay}
+                  aria-label="Previous day"
+                  className="p-1.5 rounded-lg text-slate-600 hover:bg-white hover:shadow-xs transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                
+                <div className="flex items-center gap-1.5 px-2 py-1">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-800 whitespace-nowrap">
+                    {formatDisplayDate(currentDate)}
+                  </span>
+                </div>
+
+                <button
+                  id="btn-next-date"
+                  type="button"
+                  onClick={handleNextDay}
+                  aria-label="Next day"
+                  className="p-1.5 rounded-lg text-slate-600 hover:bg-white hover:shadow-xs transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                {!isToday && (
+                  <button
+                    id="btn-jump-today"
+                    type="button"
+                    onClick={handleSetToday}
+                    className="text-[11px] font-medium bg-teal-100/70 hover:bg-teal-200/70 text-teal-800 px-2 py-0.5 rounded-md transition-colors ml-1"
+                  >
+                    Today
+                  </button>
+                )}
+
+                <div className="hidden lg:flex items-center border-l border-slate-200 pl-2 ml-1 text-xs text-slate-500 font-mono">
+                  <span className="font-semibold text-slate-700">{currentTimeStr}</span>
+                </div>
+              </div>
             )}
 
-            <div className="hidden sm:flex items-center border-l border-slate-200 pl-2 ml-1 text-xs text-slate-500 font-mono">
-              <span className="font-semibold text-slate-700">{currentTimeStr}</span>
-            </div>
+            {currentView === 'history' && (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-50/80 border border-teal-200 text-teal-900 text-xs font-semibold">
+                <span className="w-2 h-2 rounded-full bg-teal-600 animate-pulse" />
+                <span>Daywise Records (Descending)</span>
+              </div>
+            )}
           </div>
 
           {/* Action Bar (Desktop) */}

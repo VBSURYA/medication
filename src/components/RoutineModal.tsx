@@ -90,6 +90,13 @@ const PRESETS: RoutinePreset[] = [
     iconKey: 'footprints',
   },
   {
+    title: 'Morning Bowel Movement / Latrine',
+    category: 'bathroom',
+    time: '07:15',
+    description: 'Regular morning elimination & bowel movement check',
+    iconKey: 'activity',
+  },
+  {
     title: 'Bedtime Wind Down',
     category: 'sleep',
     time: '22:00',
@@ -294,6 +301,7 @@ export const RoutineModal: React.FC<RoutineModalProps> = ({
                 <option value="vitals">Health Check (Blood Pressure, Sugar)</option>
                 <option value="activity">Exercise / Walk / Stretching</option>
                 <option value="sleep">Sleep & Bedtime Routine</option>
+                <option value="bathroom">Latrine / Bowel Movement (Elimination)</option>
                 <option value="other">General Routine</option>
               </select>
             </div>

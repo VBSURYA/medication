@@ -86,6 +86,7 @@ export type RoutineCategory =
   | 'vitals' 
   | 'activity' 
   | 'sleep' 
+  | 'bathroom' 
   | 'other';
 
 export interface RoutineItem {
@@ -122,3 +123,45 @@ export interface DailyRoutineItem {
 export type UnifiedTimelineItem = 
   | { type: 'medication'; data: DailyDoseItem; time: string }
   | { type: 'routine'; data: DailyRoutineItem; time: string };
+
+export interface HistoryEventItem {
+  id: string;
+  type: 'medication' | 'routine';
+  date: string; // "YYYY-MM-DD"
+  scheduledTime: string; // "07:00"
+  recordedAt?: string; // ISO string when taken or completed
+  title: string;
+  subtitle?: string;
+  category?: RoutineCategory;
+  medicationForm?: MedicationForm;
+  status: 'taken' | 'completed' | 'skipped' | 'pending';
+  mealRelation?: MealRelation;
+  mealName?: string;
+  notes?: string;
+  skippedReason?: string;
+  isSpecialDose?: boolean;
+  specialConditionNote?: string;
+  doctorName?: string;
+  color?: string;
+}
+
+export interface DayHistoryGroup {
+  date: string; // "YYYY-MM-DD"
+  displayDate: string;
+  events: HistoryEventItem[];
+  medStats: {
+    taken: number;
+    skipped: number;
+    pending: number;
+    total: number;
+    adherencePercent: number;
+  };
+  routineStats: {
+    completed: number;
+    total: number;
+    mealsCount: number;
+    latrineCount: number;
+    hydrationCount: number;
+    vitalsCount: number;
+  };
+}

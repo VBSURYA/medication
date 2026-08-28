@@ -224,6 +224,16 @@ export const INITIAL_SAMPLE_ROUTINES: RoutineItem[] = [
     createdAt: '2026-08-01T08:00:00.000Z',
   },
   {
+    id: 'routine-latrine-1',
+    title: 'Morning Bowel Movement / Latrine',
+    category: 'bathroom',
+    time: '07:15',
+    description: 'Daily elimination & digestive regularity check',
+    iconKey: 'activity',
+    reminderEnabled: false,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
     id: 'routine-6',
     title: 'Bedtime Wind-Down & Water',
     category: 'sleep',
@@ -281,33 +291,235 @@ export function saveMedications(medications: Medication[]): void {
   }
 }
 
+export function generateDefaultSampleDoseLogs(): DoseLog[] {
+  const today = getTodayDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().split('T')[0];
+
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  const t2Str = twoDaysAgo.toISOString().split('T')[0];
+
+  return [
+    // Today
+    {
+      id: 'log-seed-1',
+      date: today,
+      medicationId: 'med-1',
+      scheduleId: 'sch-1-1',
+      scheduledTime: '07:00',
+      mealRelation: 'before_meal',
+      mealName: 'Breakfast',
+      status: 'taken',
+      takenAt: `${today}T07:05:12.000Z`,
+      notes: 'Taken before breakfast with 250ml warm water',
+    },
+    // Yesterday
+    {
+      id: 'log-seed-y1',
+      date: yStr,
+      medicationId: 'med-1',
+      scheduleId: 'sch-1-1',
+      scheduledTime: '07:00',
+      mealRelation: 'before_meal',
+      mealName: 'Breakfast',
+      status: 'taken',
+      takenAt: `${yStr}T07:04:30.000Z`,
+      notes: 'Taken before breakfast',
+    },
+    {
+      id: 'log-seed-y2',
+      date: yStr,
+      medicationId: 'med-2',
+      scheduleId: 'sch-2-1',
+      scheduledTime: '08:00',
+      mealRelation: 'after_meal',
+      mealName: 'Breakfast',
+      status: 'taken',
+      takenAt: `${yStr}T08:12:00.000Z`,
+      notes: 'Blood pressure was 128/82 mmHg',
+    },
+    {
+      id: 'log-seed-y3',
+      date: yStr,
+      medicationId: 'med-3',
+      scheduleId: 'sch-3-1',
+      scheduledTime: '13:00',
+      mealRelation: 'with_meal',
+      mealName: 'Lunch',
+      status: 'taken',
+      takenAt: `${yStr}T13:15:00.000Z`,
+      notes: 'Taken during lunch',
+    },
+    {
+      id: 'log-seed-y4',
+      date: yStr,
+      medicationId: 'med-4',
+      scheduleId: 'sch-4-1',
+      scheduledTime: '22:00',
+      mealRelation: 'anytime',
+      mealName: 'Bedtime',
+      status: 'taken',
+      takenAt: `${yStr}T22:08:45.000Z`,
+      notes: 'Taken before sleep with water',
+    },
+    // Two Days Ago
+    {
+      id: 'log-seed-t1',
+      date: t2Str,
+      medicationId: 'med-1',
+      scheduleId: 'sch-1-1',
+      scheduledTime: '07:00',
+      mealRelation: 'before_meal',
+      mealName: 'Breakfast',
+      status: 'taken',
+      takenAt: `${t2Str}T07:02:00.000Z`,
+    },
+    {
+      id: 'log-seed-t2',
+      date: t2Str,
+      medicationId: 'med-2',
+      scheduleId: 'sch-2-1',
+      scheduledTime: '08:00',
+      mealRelation: 'after_meal',
+      mealName: 'Breakfast',
+      status: 'taken',
+      takenAt: `${t2Str}T08:09:00.000Z`,
+    },
+    {
+      id: 'log-seed-t3',
+      date: t2Str,
+      medicationId: 'med-4',
+      scheduleId: 'sch-4-1',
+      scheduledTime: '22:00',
+      mealRelation: 'anytime',
+      mealName: 'Bedtime',
+      status: 'taken',
+      takenAt: `${t2Str}T22:15:00.000Z`,
+    },
+  ];
+}
+
+export function generateDefaultSampleRoutineLogs(): RoutineLog[] {
+  const today = getTodayDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().split('T')[0];
+
+  const twoDaysAgo = new Date();
+  twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+  const t2Str = twoDaysAgo.toISOString().split('T')[0];
+
+  return [
+    // Today
+    {
+      id: 'routine-log-seed-1',
+      routineId: 'routine-1',
+      date: today,
+      status: 'completed',
+      completedAt: `${today}T06:20:00.000Z`,
+      notes: 'Had oatmeal with blueberries and warm lemon water',
+    },
+    {
+      id: 'routine-log-seed-latrine-today',
+      routineId: 'routine-latrine-1',
+      date: today,
+      status: 'completed',
+      completedAt: `${today}T07:22:00.000Z`,
+      notes: 'Normal bowel movement, comfortable, regular digestion',
+    },
+    // Yesterday
+    {
+      id: 'routine-log-seed-y1',
+      routineId: 'routine-1',
+      date: yStr,
+      status: 'completed',
+      completedAt: `${yStr}T06:25:00.000Z`,
+      notes: 'Scrambled eggs, whole wheat toast, and green tea',
+    },
+    {
+      id: 'routine-log-seed-y-latrine',
+      routineId: 'routine-latrine-1',
+      date: yStr,
+      status: 'completed',
+      completedAt: `${yStr}T07:15:00.000Z`,
+      notes: 'Morning latrine / bowel movement, normal stool, no pain',
+    },
+    {
+      id: 'routine-log-seed-y2',
+      routineId: 'routine-3',
+      date: yStr,
+      status: 'completed',
+      completedAt: `${yStr}T13:05:00.000Z`,
+      notes: 'Lentil soup with mixed vegetables',
+    },
+    {
+      id: 'routine-log-seed-y3',
+      routineId: 'routine-5',
+      date: yStr,
+      status: 'completed',
+      completedAt: `${yStr}T19:35:00.000Z`,
+      notes: 'Steamed vegetables and grilled fish',
+    },
+    {
+      id: 'routine-log-seed-y4',
+      routineId: 'routine-6',
+      date: yStr,
+      status: 'completed',
+      completedAt: `${yStr}T21:40:00.000Z`,
+      notes: 'Bedtime glass of water and wind-down',
+    },
+    // Two Days Ago
+    {
+      id: 'routine-log-seed-t1',
+      routineId: 'routine-1',
+      date: t2Str,
+      status: 'completed',
+      completedAt: `${t2Str}T06:35:00.000Z`,
+    },
+    {
+      id: 'routine-log-seed-t-latrine',
+      routineId: 'routine-latrine-1',
+      date: t2Str,
+      status: 'completed',
+      completedAt: `${t2Str}T07:20:00.000Z`,
+      notes: 'Daily morning elimination, normal comfort',
+    },
+    {
+      id: 'routine-log-seed-t2',
+      routineId: 'routine-3',
+      date: t2Str,
+      status: 'completed',
+      completedAt: `${t2Str}T13:10:00.000Z`,
+    },
+    {
+      id: 'routine-log-seed-t3',
+      routineId: 'routine-5',
+      date: t2Str,
+      status: 'completed',
+      completedAt: `${t2Str}T19:40:00.000Z`,
+    },
+  ];
+}
+
 export function getStoredLogs(): DoseLog[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY_LOGS);
     if (!data) {
-      // Seed a sample log for today so the user immediately sees one dose already marked taken
-      const today = getTodayDateString();
-      const initialLogs: DoseLog[] = [
-        {
-          id: `log-seed-1`,
-          date: today,
-          medicationId: 'med-1',
-          scheduleId: 'sch-1-1',
-          scheduledTime: '07:00',
-          mealRelation: 'before_meal',
-          mealName: 'Breakfast',
-          status: 'taken',
-          takenAt: `${today}T07:05:00`,
-          notes: 'Taken before breakfast with 250ml water',
-        },
-      ];
+      const initialLogs = generateDefaultSampleDoseLogs();
       saveLogs(initialLogs);
       return initialLogs;
     }
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    const initialLogs = generateDefaultSampleDoseLogs();
+    saveLogs(initialLogs);
+    return initialLogs;
   } catch {
-    return [];
+    return generateDefaultSampleDoseLogs();
   }
 }
 
@@ -427,25 +639,19 @@ export function getStoredRoutineLogs(): RoutineLog[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY_ROUTINE_LOGS);
     if (!data) {
-      // Pre-seed completed breakfast for today as a positive demonstration
-      const today = getTodayDateString();
-      const initialRoutineLogs: RoutineLog[] = [
-        {
-          id: 'routine-log-seed-1',
-          routineId: 'routine-1',
-          date: today,
-          status: 'completed',
-          completedAt: `${today}T06:20:00`,
-          notes: 'Had oatmeal with blueberries and warm lemon water',
-        },
-      ];
+      const initialRoutineLogs = generateDefaultSampleRoutineLogs();
       saveRoutineLogs(initialRoutineLogs);
       return initialRoutineLogs;
     }
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+    const initialRoutineLogs = generateDefaultSampleRoutineLogs();
+    saveRoutineLogs(initialRoutineLogs);
+    return initialRoutineLogs;
   } catch {
-    return [];
+    return generateDefaultSampleRoutineLogs();
   }
 }
 
