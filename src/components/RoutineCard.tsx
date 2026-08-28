@@ -111,6 +111,7 @@ export const RoutineCard: React.FC<RoutineCardProps> = ({
           pillBg: 'bg-purple-100/80 border-purple-300 text-purple-900',
         };
       case 'bathroom':
+      case 'latrine':
         return {
           label: 'Latrine / Bowel Movement',
           icon: <Activity className="w-5 h-5" />,

@@ -4,6 +4,9 @@ export interface DbStatusResponse {
   connected: boolean;
   configured: boolean;
   databaseName?: string;
+  maskedUri?: string;
+  storageMode?: 'mongodb' | 'server_disk';
+  lastSync?: string;
   error?: string;
   itemCounts?: {
     medications: number;
@@ -11,6 +14,70 @@ export interface DbStatusResponse {
     routines?: number;
     routineLogs?: number;
   };
+}
+
+export interface SyncAllResponse {
+  medications: Medication[];
+  logs: DoseLog[];
+  routines: RoutineItem[];
+  routineLogs: RoutineLog[];
+  dbStatus: DbStatusResponse;
+  timestamp: string;
+}
+
+export async function fetchApiSyncAll(date?: string): Promise<SyncAllResponse | null> {
+  try {
+    const url = date ? `/api/sync/all?date=${encodeURIComponent(date)}` : '/api/sync/all';
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data;
+  } catch (err) {
+    console.warn('[API] Atomic sync error, falling back to local cached state:', err);
+    return null;
+  }
+}
+
+export async function apiTestMongo(uri: string): Promise<{ ok: boolean; message: string; databaseName?: string }> {
+  try {
+    const res = await fetch('/api/db/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri }),
+    });
+    return await res.json();
+  } catch (err: any) {
+    return { ok: false, message: err.message || 'Connection test request failed' };
+  }
+}
+
+export async function apiConfigureMongo(uri: string): Promise<{ success: boolean; status?: DbStatusResponse; error?: string }> {
+  try {
+    const res = await fetch('/api/db/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uri }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || `HTTP ${res.status}` };
+    }
+    return { success: true, status: data.status };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to save MongoDB configuration' };
+  }
+}
+
+export async function apiDisconnectMongo(): Promise<{ success: boolean; status?: DbStatusResponse; error?: string }> {
+  try {
+    const res = await fetch('/api/db/disconnect', {
+      method: 'POST',
+    });
+    const data = await res.json();
+    return { success: res.ok, status: data.status, error: data.error };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to disconnect MongoDB' };
+  }
 }
 
 export async function fetchDbStatus(): Promise<DbStatusResponse> {

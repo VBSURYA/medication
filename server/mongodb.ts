@@ -1,4 +1,6 @@
-import { MongoClient, Db, Collection } from 'mongodb';
+import fs from 'fs';
+import path from 'path';
+import { MongoClient, Db } from 'mongodb';
 import { Medication, DoseLog, RoutineItem, RoutineLog } from '../src/types.ts';
 import { 
   INITIAL_SAMPLE_MEDICATIONS, 
@@ -7,11 +9,14 @@ import {
   generateDefaultSampleRoutineLogs
 } from '../src/utils/storage.ts';
 
-interface DbStatus {
+export interface DbStatus {
   connected: boolean;
   configured: boolean;
   databaseName?: string;
+  maskedUri?: string;
   error?: string;
+  storageMode: 'mongodb' | 'server_disk';
+  lastSync?: string;
   itemCounts?: {
     medications: number;
     logs: number;
@@ -24,13 +29,90 @@ let client: MongoClient | null = null;
 let db: Db | null = null;
 let isConnecting = false;
 let connectionError: string | null = null;
+let lastSyncTimestamp = new Date().toISOString();
 
-// In-memory fallback cache to ensure zero crashes and instant readiness
-// before the user configures MONGODB_URI in .env.local
+// Persistent Disk Store Path: /server/data/store.json
+const STORE_DIR = path.join(process.cwd(), 'server', 'data');
+const STORE_FILE = path.join(STORE_DIR, 'store.json');
+
+interface LocalDiskStore {
+  medications: Medication[];
+  logs: DoseLog[];
+  routines: RoutineItem[];
+  routineLogs: RoutineLog[];
+  updatedAt: string;
+}
+
 let inMemoryMedications: Medication[] = [...INITIAL_SAMPLE_MEDICATIONS];
 let inMemoryLogs: DoseLog[] = generateDefaultSampleDoseLogs();
 let inMemoryRoutines: RoutineItem[] = [...INITIAL_SAMPLE_ROUTINES];
 let inMemoryRoutineLogs: RoutineLog[] = generateDefaultSampleRoutineLogs();
+
+function ensureStoreDir(): void {
+  try {
+    if (!fs.existsSync(STORE_DIR)) {
+      fs.mkdirSync(STORE_DIR, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('[Store] Could not create data directory:', err);
+  }
+}
+
+function loadFromDiskStore(): void {
+  try {
+    ensureStoreDir();
+    if (fs.existsSync(STORE_FILE)) {
+      const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+      const parsed: LocalDiskStore = JSON.parse(raw);
+      if (Array.isArray(parsed.medications)) {
+        inMemoryMedications = parsed.medications;
+      }
+      if (Array.isArray(parsed.logs)) {
+        inMemoryLogs = parsed.logs;
+      }
+      if (Array.isArray(parsed.routines)) {
+        inMemoryRoutines = parsed.routines;
+      }
+      if (Array.isArray(parsed.routineLogs)) {
+        inMemoryRoutineLogs = parsed.routineLogs;
+      }
+      console.log(`[Store] Loaded from persistent disk store: ${inMemoryMedications.length} meds, ${inMemoryRoutines.length} routines, ${inMemoryLogs.length} logs`);
+      return;
+    }
+  } catch (err) {
+    console.warn('[Store] Error reading disk store, will initialize default:', err);
+  }
+  // Initialize file with defaults
+  saveToDiskStore();
+}
+
+function saveToDiskStore(): void {
+  try {
+    ensureStoreDir();
+    const data: LocalDiskStore = {
+      medications: inMemoryMedications,
+      logs: inMemoryLogs,
+      routines: inMemoryRoutines,
+      routineLogs: inMemoryRoutineLogs,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    lastSyncTimestamp = data.updatedAt;
+  } catch (err) {
+    console.warn('[Store] Error writing disk store:', err);
+  }
+}
+
+// Load disk store on server startup
+loadFromDiskStore();
+
+/**
+ * Mask sensitive credentials in MongoDB URI for safe UI display
+ */
+export function maskMongoUri(uri?: string): string {
+  if (!uri) return '';
+  return uri.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)([^@]+)(@.+)/i, '$1******$3');
+}
 
 /**
  * Lazy, fail-safe connection to MongoDB.
@@ -47,7 +129,6 @@ export async function getMongoDb(): Promise<Db | null> {
   }
 
   if (isConnecting) {
-    // Wait slightly if connection is already in progress
     await new Promise((resolve) => setTimeout(resolve, 500));
     if (db) return db;
   }
@@ -56,49 +137,60 @@ export async function getMongoDb(): Promise<Db | null> {
   connectionError = null;
 
   try {
-    console.log('[MongoDB] Connecting to MongoDB instance...');
+    console.log('[MongoDB] Connecting to MongoDB cluster...');
     const newClient = new MongoClient(uri, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 6000,
+      connectTimeoutMS: 6000,
     });
 
     await newClient.connect();
     client = newClient;
     
-    // Use database specified in URI or default to 'medschedule'
     db = client.db(process.env.MONGODB_DB_NAME || 'medschedule');
     console.log(`[MongoDB] Connected successfully to database: ${db.databaseName}`);
 
-    // Seed initial medications if empty
+    // Synchronize initial data:
+    // If MongoDB is empty, seed from current persistent disk store
     const medsCol = db.collection<Medication>('medications');
-    const count = await medsCol.countDocuments();
-    if (count === 0 && inMemoryMedications.length > 0) {
-      console.log('[MongoDB] Seeding initial medications into database...');
+    const medsCount = await medsCol.countDocuments();
+    if (medsCount === 0 && inMemoryMedications.length > 0) {
+      console.log('[MongoDB] Seeding medications into MongoDB collections...');
       await medsCol.insertMany(inMemoryMedications as any);
+    } else if (medsCount > 0) {
+      // MongoDB already has data, sync into local store
+      const docs = await medsCol.find({}).toArray();
+      inMemoryMedications = docs.map(({ _id, ...rest }: any) => rest as Medication);
     }
 
-    // Seed initial logs if empty
+    const routinesCol = db.collection<RoutineItem>('routines');
+    const routinesCount = await routinesCol.countDocuments();
+    if (routinesCount === 0 && inMemoryRoutines.length > 0) {
+      console.log('[MongoDB] Seeding routines into MongoDB collections...');
+      await routinesCol.insertMany(inMemoryRoutines as any);
+    } else if (routinesCount > 0) {
+      const docs = await routinesCol.find({}).toArray();
+      inMemoryRoutines = docs.map(({ _id, ...rest }: any) => rest as RoutineItem);
+    }
+
     const logsCol = db.collection<DoseLog>('dose_logs');
     const logsCount = await logsCol.countDocuments();
     if (logsCount === 0 && inMemoryLogs.length > 0) {
       await logsCol.insertMany(inMemoryLogs as any);
+    } else if (logsCount > 0) {
+      const docs = await logsCol.find({}).toArray();
+      inMemoryLogs = docs.map(({ _id, ...rest }: any) => rest as DoseLog);
     }
 
-    // Seed initial routines if empty
-    const routinesCol = db.collection<RoutineItem>('routines');
-    const routinesCount = await routinesCol.countDocuments();
-    if (routinesCount === 0 && inMemoryRoutines.length > 0) {
-      console.log('[MongoDB] Seeding initial daily meals & routines into database...');
-      await routinesCol.insertMany(inMemoryRoutines as any);
-    }
-
-    // Seed initial routine logs if empty
     const rLogsCol = db.collection<RoutineLog>('routine_logs');
     const rLogsCount = await rLogsCol.countDocuments();
     if (rLogsCount === 0 && inMemoryRoutineLogs.length > 0) {
       await rLogsCol.insertMany(inMemoryRoutineLogs as any);
+    } else if (rLogsCount > 0) {
+      const docs = await rLogsCol.find({}).toArray();
+      inMemoryRoutineLogs = docs.map(({ _id, ...rest }: any) => rest as RoutineLog);
     }
 
+    saveToDiskStore();
     return db;
   } catch (err: any) {
     connectionError = err.message || 'Failed to connect to MongoDB';
@@ -122,6 +214,8 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
     return {
       connected: false,
       configured: false,
+      storageMode: 'server_disk',
+      lastSync: lastSyncTimestamp,
       itemCounts: {
         medications: inMemoryMedications.length,
         logs: inMemoryLogs.length,
@@ -137,7 +231,10 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
       return {
         connected: false,
         configured: true,
-        error: connectionError || 'Could not establish connection to MongoDB URI.',
+        maskedUri: maskMongoUri(uri),
+        storageMode: 'server_disk',
+        lastSync: lastSyncTimestamp,
+        error: connectionError || 'Could not establish connection to MongoDB URI. Please verify cluster credentials and IP access list.',
         itemCounts: {
           medications: inMemoryMedications.length,
           logs: inMemoryLogs.length,
@@ -156,6 +253,9 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
       connected: true,
       configured: true,
       databaseName: activeDb.databaseName,
+      maskedUri: maskMongoUri(uri),
+      storageMode: 'mongodb',
+      lastSync: lastSyncTimestamp,
       itemCounts: {
         medications: medsCount,
         logs: logsCount,
@@ -167,13 +267,158 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
     return {
       connected: false,
       configured: true,
-      error: err.message || 'Error pinging MongoDB database',
+      maskedUri: maskMongoUri(uri),
+      storageMode: 'server_disk',
+      lastSync: lastSyncTimestamp,
+      error: err.message || 'Error querying MongoDB database',
+      itemCounts: {
+        medications: inMemoryMedications.length,
+        logs: inMemoryLogs.length,
+        routines: inMemoryRoutines.length,
+        routineLogs: inMemoryRoutineLogs.length,
+      },
     };
   }
 }
 
 /**
- * Fetch all medications (from MongoDB or memory fallback)
+ * Test a MongoDB connection string without saving it
+ */
+export async function testMongoConnection(uri: string): Promise<{ ok: boolean; message: string; databaseName?: string }> {
+  const cleanUri = uri.trim();
+  if (!cleanUri) {
+    return { ok: false, message: 'URI cannot be empty' };
+  }
+  if (!cleanUri.startsWith('mongodb://') && !cleanUri.startsWith('mongodb+srv://')) {
+    return { ok: false, message: 'Invalid format: Must start with "mongodb://" or "mongodb+srv://"' };
+  }
+
+  const testClient = new MongoClient(cleanUri, {
+    serverSelectionTimeoutMS: 6000,
+    connectTimeoutMS: 6000,
+  });
+
+  try {
+    await testClient.connect();
+    const testDb = testClient.db(process.env.MONGODB_DB_NAME || 'medschedule');
+    await testDb.command({ ping: 1 });
+    const dbName = testDb.databaseName;
+    await testClient.close();
+    return { ok: true, message: 'Successfully connected and pinged MongoDB cluster!', databaseName: dbName };
+  } catch (err: any) {
+    try { await testClient.close(); } catch {}
+    return { ok: false, message: err.message || 'Failed to connect to MongoDB cluster' };
+  }
+}
+
+/**
+ * Configure and persist MongoDB connection string into .env.local and establish live connection
+ */
+export async function saveMongoUriConfig(uri: string): Promise<DbStatus> {
+  const cleanUri = uri.trim();
+  if (!cleanUri) {
+    throw new Error('MongoDB URI cannot be empty');
+  }
+
+  // 1. Test connection first
+  const testRes = await testMongoConnection(cleanUri);
+  if (!testRes.ok) {
+    throw new Error(testRes.message);
+  }
+
+  // 2. Disconnect previous if open
+  if (client) {
+    try {
+      await client.close();
+    } catch {}
+    client = null;
+    db = null;
+  }
+
+  // 3. Persist to .env.local
+  try {
+    const envLocalPath = path.join(process.cwd(), '.env.local');
+    let envContent = '';
+    if (fs.existsSync(envLocalPath)) {
+      envContent = fs.readFileSync(envLocalPath, 'utf-8');
+      if (envContent.includes('MONGODB_URI=')) {
+        envContent = envContent.replace(/MONGODB_URI=.*(\r?\n|$)/g, `MONGODB_URI=${cleanUri}$1`);
+      } else {
+        envContent = envContent.trim() + `\nMONGODB_URI=${cleanUri}\n`;
+      }
+    } else {
+      envContent = `MONGODB_URI=${cleanUri}\n`;
+    }
+    fs.writeFileSync(envLocalPath, envContent, 'utf-8');
+    console.log('[MongoDB] Saved MONGODB_URI to .env.local');
+  } catch (envErr) {
+    console.warn('[MongoDB] Note: Could not write .env.local:', envErr);
+  }
+
+  // 4. Update process.env
+  process.env.MONGODB_URI = cleanUri;
+
+  // 5. Connect and synchronize collections
+  const activeDb = await getMongoDb();
+  if (!activeDb) {
+    throw new Error('Failed to initialize connection with verified URI');
+  }
+
+  return await getDatabaseStatus();
+}
+
+/**
+ * Disconnect MongoDB and revert to server persistent storage
+ */
+export async function disconnectMongo(): Promise<DbStatus> {
+  if (client) {
+    try {
+      await client.close();
+    } catch {}
+    client = null;
+    db = null;
+  }
+  delete process.env.MONGODB_URI;
+
+  try {
+    const envLocalPath = path.join(process.cwd(), '.env.local');
+    if (fs.existsSync(envLocalPath)) {
+      let content = fs.readFileSync(envLocalPath, 'utf-8');
+      content = content.replace(/MONGODB_URI=.*(\r?\n|$)/g, '');
+      fs.writeFileSync(envLocalPath, content, 'utf-8');
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error removing URI from .env.local:', err);
+  }
+
+  return await getDatabaseStatus();
+}
+
+/**
+ * Atomic unified data sync for all devices:
+ * Returns medications, routines, dose logs, and status in one payload
+ */
+export async function getAllDataSync(date?: string) {
+  const [meds, logsList, routinesList, rLogsList, status] = await Promise.all([
+    getAllMedications(),
+    getAllLogs(date),
+    getAllRoutines(),
+    getAllRoutineLogs(date),
+    getDatabaseStatus(),
+  ]);
+
+  return {
+    medications: meds,
+    logs: logsList,
+    routines: routinesList,
+    routineLogs: rLogsList,
+    dbStatus: status,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Fetch all medications (from MongoDB or persistent server disk)
  */
 export async function getAllMedications(): Promise<Medication[]> {
   try {
@@ -181,37 +426,19 @@ export async function getAllMedications(): Promise<Medication[]> {
     if (activeDb) {
       const col = activeDb.collection<Medication>('medications');
       const docs = await col.find({}).toArray();
-      // Map out Mongo's _id if present and ensure clean Medication objects
       const mapped = docs.map(({ _id, ...rest }: any) => rest as Medication);
-      return mapped.map((m) => {
-        if (m.id === 'med-4' && m.schedules.some((s) => s.time === '20:30')) {
-          return {
-            ...m,
-            instructions: 'Take once nightly at bedtime with water for cholesterol management.',
-            schedules: m.schedules.map((s) =>
-              s.time === '20:30'
-                ? {
-                    ...s,
-                    time: '21:30',
-                    slot: 'night' as const,
-                    label: 'Night / Bedtime Lipid Support',
-                    mealName: 'Bedtime',
-                  }
-                : s
-            ),
-          };
-        }
-        return m;
-      });
+      inMemoryMedications = mapped;
+      saveToDiskStore();
+      return mapped;
     }
   } catch (err) {
-    console.warn('[MongoDB] Error querying medications from DB, using fallback:', err);
+    console.warn('[MongoDB] Error querying medications from DB, using persistent store:', err);
   }
   return inMemoryMedications;
 }
 
 /**
- * Save or update a medication
+ * Save or update a medication across MongoDB and persistent server disk
  */
 export async function saveMedication(med: Medication): Promise<Medication> {
   try {
@@ -221,16 +448,17 @@ export async function saveMedication(med: Medication): Promise<Medication> {
       await col.updateOne({ id: med.id }, { $set: med }, { upsert: true });
     }
   } catch (err) {
-    console.warn('[MongoDB] Error saving medication to DB, updating fallback:', err);
+    console.warn('[MongoDB] Error saving medication to DB, updating persistent store:', err);
   }
 
-  // Update in-memory fallback
+  // Update in-memory & disk store
   const idx = inMemoryMedications.findIndex((m) => m.id === med.id);
   if (idx >= 0) {
     inMemoryMedications[idx] = med;
   } else {
     inMemoryMedications.push(med);
   }
+  saveToDiskStore();
 
   return med;
 }
@@ -245,7 +473,7 @@ export async function deleteMedication(id: string): Promise<boolean> {
       const col = activeDb.collection<Medication>('medications');
       await col.deleteOne({ id });
 
-      // Also remove un-taken logs for this deleted medication
+      // Also clean up non-taken logs for this deleted medication
       const logsCol = activeDb.collection<DoseLog>('dose_logs');
       await logsCol.deleteMany({ medicationId: id, status: { $ne: 'taken' } });
     }
@@ -253,9 +481,9 @@ export async function deleteMedication(id: string): Promise<boolean> {
     console.warn('[MongoDB] Error deleting medication from DB:', err);
   }
 
-  // Update in-memory fallback
   inMemoryMedications = inMemoryMedications.filter((m) => m.id !== id);
   inMemoryLogs = inMemoryLogs.filter((l) => l.medicationId !== id || l.status === 'taken');
+  saveToDiskStore();
 
   return true;
 }
@@ -270,10 +498,21 @@ export async function getAllLogs(date?: string): Promise<DoseLog[]> {
       const col = activeDb.collection<DoseLog>('dose_logs');
       const query = date ? { date } : {};
       const docs = await col.find(query).toArray();
-      return docs.map(({ _id, ...rest }: any) => rest as DoseLog);
+      const mapped = docs.map(({ _id, ...rest }: any) => rest as DoseLog);
+      // Merge into inMemoryLogs
+      for (const item of mapped) {
+        const idx = inMemoryLogs.findIndex((l) => l.id === item.id);
+        if (idx >= 0) {
+          inMemoryLogs[idx] = item;
+        } else {
+          inMemoryLogs.push(item);
+        }
+      }
+      saveToDiskStore();
+      return mapped;
     }
   } catch (err) {
-    console.warn('[MongoDB] Error querying logs from DB, using fallback:', err);
+    console.warn('[MongoDB] Error querying logs from DB, using persistent store:', err);
   }
 
   if (date) {
@@ -296,13 +535,13 @@ export async function saveDoseLog(log: DoseLog): Promise<DoseLog> {
     console.warn('[MongoDB] Error saving log to DB:', err);
   }
 
-  // Update in-memory
   const idx = inMemoryLogs.findIndex((l) => l.id === log.id);
   if (idx >= 0) {
     inMemoryLogs[idx] = log;
   } else {
     inMemoryLogs.push(log);
   }
+  saveToDiskStore();
 
   return log;
 }
@@ -316,10 +555,13 @@ export async function getAllRoutines(): Promise<RoutineItem[]> {
     if (activeDb) {
       const col = activeDb.collection<RoutineItem>('routines');
       const docs = await col.find({}).toArray();
-      return docs.map(({ _id, ...rest }: any) => rest as RoutineItem);
+      const mapped = docs.map(({ _id, ...rest }: any) => rest as RoutineItem);
+      inMemoryRoutines = mapped;
+      saveToDiskStore();
+      return mapped;
     }
   } catch (err) {
-    console.warn('[MongoDB] Error querying routines from DB, using fallback:', err);
+    console.warn('[MongoDB] Error querying routines from DB, using persistent store:', err);
   }
   return inMemoryRoutines;
 }
@@ -335,7 +577,7 @@ export async function saveRoutine(routine: RoutineItem): Promise<RoutineItem> {
       await col.updateOne({ id: routine.id }, { $set: routine }, { upsert: true });
     }
   } catch (err) {
-    console.warn('[MongoDB] Error saving routine to DB, updating fallback:', err);
+    console.warn('[MongoDB] Error saving routine to DB, updating persistent store:', err);
   }
 
   const idx = inMemoryRoutines.findIndex((r) => r.id === routine.id);
@@ -344,6 +586,7 @@ export async function saveRoutine(routine: RoutineItem): Promise<RoutineItem> {
   } else {
     inMemoryRoutines.push(routine);
   }
+  saveToDiskStore();
 
   return routine;
 }
@@ -367,6 +610,7 @@ export async function deleteRoutine(id: string): Promise<boolean> {
 
   inMemoryRoutines = inMemoryRoutines.filter((r) => r.id !== id);
   inMemoryRoutineLogs = inMemoryRoutineLogs.filter((l) => l.routineId !== id);
+  saveToDiskStore();
 
   return true;
 }
@@ -381,10 +625,20 @@ export async function getAllRoutineLogs(date?: string): Promise<RoutineLog[]> {
       const col = activeDb.collection<RoutineLog>('routine_logs');
       const query = date ? { date } : {};
       const docs = await col.find(query).toArray();
-      return docs.map(({ _id, ...rest }: any) => rest as RoutineLog);
+      const mapped = docs.map(({ _id, ...rest }: any) => rest as RoutineLog);
+      for (const item of mapped) {
+        const idx = inMemoryRoutineLogs.findIndex((l) => l.id === item.id);
+        if (idx >= 0) {
+          inMemoryRoutineLogs[idx] = item;
+        } else {
+          inMemoryRoutineLogs.push(item);
+        }
+      }
+      saveToDiskStore();
+      return mapped;
     }
   } catch (err) {
-    console.warn('[MongoDB] Error querying routine logs from DB, using fallback:', err);
+    console.warn('[MongoDB] Error querying routine logs from DB, using persistent store:', err);
   }
 
   if (date) {
@@ -413,6 +667,7 @@ export async function saveRoutineLog(log: RoutineLog): Promise<RoutineLog> {
   } else {
     inMemoryRoutineLogs.push(log);
   }
+  saveToDiskStore();
 
   return log;
 }
@@ -446,6 +701,7 @@ export async function resetToSamples(): Promise<{ medications: Medication[]; rou
   inMemoryLogs = [];
   inMemoryRoutines = [...INITIAL_SAMPLE_ROUTINES];
   inMemoryRoutineLogs = [];
+  saveToDiskStore();
 
   return { medications: inMemoryMedications, routines: inMemoryRoutines };
 }

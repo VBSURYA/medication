@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Pill, 
   Plus, 
@@ -93,7 +93,8 @@ import {
   fetchApiRoutineLogs,
   apiSaveRoutineLog,
   apiResetSamples, 
-  DbStatusResponse 
+  DbStatusResponse,
+  fetchApiSyncAll
 } from './utils/api.ts';
 
 export type UnifiedSlotItem = 
@@ -245,60 +246,77 @@ export default function App() {
     saveRoutineLogs(routineLogs);
   }, [routineLogs]);
 
-  // Initial MongoDB & API sync on mount and date change
-  useEffect(() => {
-    let mounted = true;
-    async function syncBackendData() {
-      try {
-        const status = await fetchDbStatus();
-        if (mounted) setDbStatus(status);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
 
-        const apiMeds = await fetchApiMedications();
-        if (mounted && apiMeds && apiMeds.length > 0) {
-          setMedications(apiMeds);
-          saveMedications(apiMeds);
+  // Authoritative Database Sync:
+  // Pulls the latest complete state from MongoDB / server persistent store
+  // Guarantees all devices (Phone A, Phone B, tablet) see exact identical schedules
+  const syncDatabase = useCallback(async (isManual = false) => {
+    try {
+      if (isManual) setIsSyncing(true);
+      const res = await fetchApiSyncAll(currentDate);
+      if (res) {
+        if (Array.isArray(res.medications)) {
+          setMedications(res.medications);
+          saveMedications(res.medications);
         }
-
-        const apiLogs = await fetchApiLogs();
-        if (mounted && apiLogs && apiLogs.length > 0) {
-          setLogs((prev) => {
-            const merged = [...apiLogs];
-            for (const l of prev) {
-              if (!merged.some((m) => m.id === l.id)) {
-                merged.push(l);
-              }
-            }
-            return merged;
-          });
+        if (Array.isArray(res.routines)) {
+          setRoutines(res.routines);
+          saveRoutines(res.routines);
         }
-
-        const apiRoutinesData = await fetchApiRoutines();
-        if (mounted && apiRoutinesData && apiRoutinesData.length > 0) {
-          setRoutines(apiRoutinesData);
-          saveRoutines(apiRoutinesData);
+        if (Array.isArray(res.logs)) {
+          setLogs(res.logs);
+          saveLogs(res.logs);
         }
-
-        const apiRLogs = await fetchApiRoutineLogs();
-        if (mounted && apiRLogs && apiRLogs.length > 0) {
-          setRoutineLogs((prev) => {
-            const merged = [...apiRLogs];
-            for (const l of prev) {
-              if (!merged.some((m) => m.id === l.id)) {
-                merged.push(l);
-              }
-            }
-            return merged;
-          });
+        if (Array.isArray(res.routineLogs)) {
+          setRoutineLogs(res.routineLogs);
+          saveRoutineLogs(res.routineLogs);
         }
-      } catch (err) {
-        console.warn('[MedSchedule] API synchronization fallback active:', err);
+        if (res.dbStatus) {
+          setDbStatus(res.dbStatus);
+        }
+        const now = new Date();
+        setLastSyncTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       }
+    } catch (err) {
+      console.warn('[MedSchedule] Database synchronization fallback active:', err);
+    } finally {
+      if (isManual) setIsSyncing(false);
     }
-    syncBackendData();
-    return () => {
-      mounted = false;
-    };
   }, [currentDate]);
+
+  // Initial fetch on mount & when currentDate changes
+  useEffect(() => {
+    syncDatabase();
+  }, [syncDatabase]);
+
+  // Multi-Device Auto-Sync on Tab Focus & Phone Screen Unlock:
+  // Immediately pulls latest data whenever user opens or switches back to the app
+  useEffect(() => {
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        syncDatabase();
+      }
+    };
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+    return () => {
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+    };
+  }, [syncDatabase]);
+
+  // Fast background polling every 5 seconds when visible:
+  // Ensures updates made on Phone A reflect on Phone B in real time
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        syncDatabase();
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [syncDatabase]);
 
   useEffect(() => {
     saveReminderSettings({
@@ -951,6 +969,8 @@ export default function App() {
         onOpenPwaModal={() => setIsPwaModalOpen(true)}
         volumeLevel={volumeLevel}
         onChangeVolumeLevel={handleChangeVolumeLevel}
+        isSyncing={isSyncing}
+        onManualSync={() => syncDatabase(true)}
       />
 
       {/* 2. Main View Switcher: History Page vs Daily Schedule Timeline */}
@@ -1430,8 +1450,7 @@ export default function App() {
         onClose={() => setIsDbModalOpen(false)}
         dbStatus={dbStatus}
         onRefresh={async () => {
-          const s = await fetchDbStatus();
-          setDbStatus(s);
+          await syncDatabase(true);
         }}
       />
 

@@ -241,7 +241,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
     if (item.isDueNow) {
       if (item.type === 'med') return 'Medication Due Right Now';
       if (item.routineCategory === 'meal') return 'Meal Due Right Now';
-      if (item.routineCategory === 'bathroom') return 'Latrine Check Due Right Now';
+      if (item.routineCategory === 'bathroom' || item.routineCategory === 'latrine') return 'Latrine Check Due Right Now';
       return 'Routine Due Right Now';
     }
 
@@ -258,7 +258,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
     // Default next upcoming today
     if (item.type === 'med') return 'Next Upcoming Dose';
     if (item.routineCategory === 'meal') return 'Next Upcoming Meal';
-    if (item.routineCategory === 'bathroom') return 'Next Upcoming Latrine / Check';
+    if (item.routineCategory === 'bathroom' || item.routineCategory === 'latrine') return 'Next Upcoming Latrine / Check';
     if (item.routineCategory === 'hydration') return 'Next Upcoming Hydration';
     return 'Next Upcoming Routine';
   };
@@ -366,7 +366,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
                       <Pill className="w-3 h-3 text-teal-600 shrink-0" />
                     ) : primaryActionItem.routineCategory === 'meal' ? (
                       <Utensils className="w-3 h-3 text-amber-600 shrink-0" />
-                    ) : primaryActionItem.routineCategory === 'bathroom' ? (
+                    ) : primaryActionItem.routineCategory === 'bathroom' || primaryActionItem.routineCategory === 'latrine' ? (
                       <Activity className="w-3 h-3 text-rose-600 shrink-0" />
                     ) : primaryActionItem.routineCategory === 'hydration' ? (
                       <Droplets className="w-3 h-3 text-blue-600 shrink-0" />

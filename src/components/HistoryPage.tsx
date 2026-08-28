@@ -94,7 +94,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
           // Category filter
           if (selectedCategory === 'medication' && event.type !== 'medication') return false;
           if (selectedCategory === 'meal' && event.category !== 'meal' && event.category !== 'snack') return false;
-          if (selectedCategory === 'bathroom' && event.category !== 'bathroom') return false;
+          if (selectedCategory === 'bathroom' && event.category !== 'bathroom' && event.category !== 'latrine') return false;
           if (selectedCategory === 'vitals' && event.category !== 'vitals') return false;
 
           // Status filter
@@ -591,7 +591,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                                   <div className="w-9 h-9 rounded-xl bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600">
                                     <Pill className="w-4 h-4" />
                                   </div>
-                                ) : event.category === 'bathroom' ? (
+                                ) : event.category === 'bathroom' || event.category === 'latrine' ? (
                                   <div className="w-9 h-9 rounded-xl bg-teal-100 border border-teal-300 flex items-center justify-center text-teal-800">
                                     <Activity className="w-4 h-4" />
                                   </div>
@@ -620,7 +620,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({
                                     </span>
                                   )}
 
-                                  {event.category === 'bathroom' && (
+                                  {(event.category === 'bathroom' || event.category === 'latrine') && (
                                     <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-200">
                                       Latrine / Bowel
                                     </span>

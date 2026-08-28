@@ -14,7 +14,11 @@ import {
   deleteRoutine,
   getAllRoutineLogs,
   saveRoutineLog,
-  resetToSamples 
+  resetToSamples,
+  saveMongoUriConfig,
+  testMongoConnection,
+  disconnectMongo,
+  getAllDataSync
 } from './server/mongodb.ts';
 
 // Load default .env and then .env.local if present
@@ -44,6 +48,57 @@ async function startServer() {
         configured: false, 
         error: err.message || 'Failed to check database status' 
       });
+    }
+  });
+
+  // 2b. Test MongoDB URI connection
+  app.post('/api/db/test', async (req, res) => {
+    try {
+      const { uri } = req.body || {};
+      if (!uri) {
+        res.status(400).json({ ok: false, message: 'URI is required' });
+        return;
+      }
+      const testResult = await testMongoConnection(uri);
+      res.json(testResult);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, message: err.message || 'Connection test failed' });
+    }
+  });
+
+  // 2c. Save and connect MongoDB URI dynamically
+  app.post('/api/db/config', async (req, res) => {
+    try {
+      const { uri } = req.body || {};
+      if (!uri) {
+        res.status(400).json({ error: 'MongoDB connection URI is required' });
+        return;
+      }
+      const newStatus = await saveMongoUriConfig(uri);
+      res.json({ success: true, status: newStatus });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Failed to configure MongoDB connection' });
+    }
+  });
+
+  // 2d. Disconnect MongoDB
+  app.post('/api/db/disconnect', async (req, res) => {
+    try {
+      const status = await disconnectMongo();
+      res.json({ success: true, status });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to disconnect MongoDB' });
+    }
+  });
+
+  // 2e. Unified atomic synchronization endpoint for all connected devices
+  app.get('/api/sync/all', async (req, res) => {
+    try {
+      const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+      const data = await getAllDataSync(date);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to synchronize all records' });
     }
   });
 

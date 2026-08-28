@@ -15,7 +15,8 @@ import {
   Utensils,
   Clock,
   Smartphone,
-  Check
+  Check,
+  RefreshCw
 } from 'lucide-react';
 import { formatDisplayDate, getTodayDateString } from '../utils/helpers.ts';
 import { soundManager, AlarmVolumeLevel } from '../utils/audio.ts';
@@ -42,6 +43,8 @@ interface HeaderProps {
   onOpenPwaModal?: () => void;
   volumeLevel?: AlarmVolumeLevel;
   onChangeVolumeLevel?: (lvl: AlarmVolumeLevel) => void;
+  isSyncing?: boolean;
+  onManualSync?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -65,6 +68,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenPwaModal,
   volumeLevel = 'loud',
   onChangeVolumeLevel,
+  isSyncing = false,
+  onManualSync,
 }) => {
   const today = getTodayDateString();
   const isToday = currentDate === today;
@@ -179,6 +184,20 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Clock className="w-4 h-4" />
               </button>
+              {/* Quick Sync Button mobile */}
+              {onManualSync && (
+                <button
+                  id="btn-mobile-sync"
+                  type="button"
+                  onClick={onManualSync}
+                  disabled={isSyncing}
+                  title="Synchronize all records with database"
+                  className="p-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-medium transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-teal-600' : 'text-slate-600'}`} />
+                </button>
+              )}
+
               {onOpenDbModal && (
                 <button
                   id="btn-mongo-status-mobile"
@@ -472,22 +491,37 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={onOpenDbModal}
                 title={
                   dbStatus?.connected 
-                    ? `Connected to MongoDB (${dbStatus.databaseName})` 
-                    : 'MongoDB status & configuration'
+                    ? `Connected to MongoDB (${dbStatus.databaseName}). Click to view or sync.` 
+                    : 'MongoDB status & cloud configuration'
                 }
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                   dbStatus?.connected
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100/70'
-                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100/70'
+                    : 'bg-teal-50/70 border-teal-200 text-teal-800 hover:bg-teal-100/70'
                 }`}
               >
-                <Database className={`w-3.5 h-3.5 ${dbStatus?.connected ? 'text-emerald-600' : 'text-slate-500'}`} />
-                <span>{dbStatus?.connected ? 'MongoDB Active' : 'MongoDB'}</span>
+                <Database className={`w-3.5 h-3.5 ${dbStatus?.connected ? 'text-emerald-600' : 'text-teal-600'}`} />
+                <span>{dbStatus?.connected ? 'MongoDB Active' : 'MongoDB Sync'}</span>
                 <span
                   className={`w-2 h-2 rounded-full ${
                     dbStatus?.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'
                   }`}
                 />
+              </button>
+            )}
+
+            {/* Quick Live Sync Button (Desktop) */}
+            {onManualSync && (
+              <button
+                id="btn-desktop-sync"
+                type="button"
+                onClick={onManualSync}
+                disabled={isSyncing}
+                title="Synchronize all patient records across all phones"
+                className="flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-teal-600' : 'text-slate-500'}`} />
+                <span className="hidden xl:inline">{isSyncing ? 'Syncing...' : 'Sync'}</span>
               </button>
             )}
 
