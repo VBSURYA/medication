@@ -78,3 +78,47 @@ export interface DailyDoseItem {
   isSpecialDose: boolean;
   specialConditionNote?: string;
 }
+
+export type RoutineCategory = 
+  | 'meal' 
+  | 'snack' 
+  | 'hydration' 
+  | 'vitals' 
+  | 'activity' 
+  | 'sleep' 
+  | 'other';
+
+export interface RoutineItem {
+  id: string;
+  title: string; // e.g. "Breakfast", "9 AM Morning Snack", "Lunch", "Dinner"
+  category: RoutineCategory;
+  time: string; // "06:00", "09:00" in 24h
+  description?: string;
+  iconKey?: string; // 'utensils', 'coffee', 'apple', 'droplet', 'activity', 'footprints', 'moon', 'heart-pulse'
+  reminderEnabled: boolean;
+  createdAt: string;
+}
+
+export type RoutineStatus = 'pending' | 'completed' | 'skipped';
+
+export interface RoutineLog {
+  id: string;
+  routineId: string;
+  date: string; // "YYYY-MM-DD"
+  status: RoutineStatus;
+  completedAt?: string; // ISO string
+  notes?: string;
+}
+
+export interface DailyRoutineItem {
+  logId: string;
+  routine: RoutineItem;
+  scheduledTime: string;
+  status: RoutineStatus;
+  completedAt?: string;
+  notes?: string;
+}
+
+export type UnifiedTimelineItem = 
+  | { type: 'medication'; data: DailyDoseItem; time: string }
+  | { type: 'routine'; data: DailyRoutineItem; time: string };

@@ -9,6 +9,11 @@ import {
   deleteMedication, 
   getAllLogs, 
   saveDoseLog, 
+  getAllRoutines,
+  saveRoutine,
+  deleteRoutine,
+  getAllRoutineLogs,
+  saveRoutineLog,
   resetToSamples 
 } from './server/mongodb.ts';
 
@@ -105,11 +110,74 @@ async function startServer() {
     }
   });
 
-  // 5. Reset data endpoint
+  // 5. Daily Routines & Meals API
+  app.get('/api/routines', async (req, res) => {
+    try {
+      const routines = await getAllRoutines();
+      res.json(routines);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to retrieve routines' });
+    }
+  });
+
+  app.post('/api/routines', async (req, res) => {
+    try {
+      const routine = req.body;
+      if (!routine || !routine.id || !routine.title || !routine.time) {
+        res.status(400).json({ error: 'Routine must have an id, title, and time' });
+        return;
+      }
+      const saved = await saveRoutine(routine);
+      res.json(saved);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to save routine' });
+    }
+  });
+
+  app.delete('/api/routines/:id', async (req, res) => {
+    try {
+      const id = req.params.id;
+      if (!id) {
+        res.status(400).json({ error: 'Routine ID is required' });
+        return;
+      }
+      await deleteRoutine(id);
+      res.json({ success: true, deletedId: id });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to delete routine' });
+    }
+  });
+
+  // 6. Routine Logs API
+  app.get('/api/routine-logs', async (req, res) => {
+    try {
+      const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+      const logs = await getAllRoutineLogs(date);
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to retrieve routine logs' });
+    }
+  });
+
+  app.post('/api/routine-logs', async (req, res) => {
+    try {
+      const log = req.body;
+      if (!log || !log.id || !log.routineId) {
+        res.status(400).json({ error: 'Routine log must have an id and routineId' });
+        return;
+      }
+      const saved = await saveRoutineLog(log);
+      res.json(saved);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to save routine log' });
+    }
+  });
+
+  // 7. Reset data endpoint
   app.post('/api/reset-samples', async (req, res) => {
     try {
-      const resetMeds = await resetToSamples();
-      res.json({ success: true, medications: resetMeds });
+      const result = await resetToSamples();
+      res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to reset sample data' });
     }

@@ -1,6 +1,6 @@
 {
   "name": "Medication Reminder & Schedule Tracker",
-  "description": "Patient medication schedule manager with meal timing (before/after eating), reminders, custom dose tracking, completion status, and special condition PRN medicines.",
+  "description": "Daily schedule manager for medications, meals (breakfast, snacks, lunch, dinner), and wellness routines with meal timing relations, audio reminders, dose logging, and MongoDB persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

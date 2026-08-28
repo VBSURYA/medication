@@ -11,7 +11,11 @@ import {
   Info, 
   Check, 
   Sparkles,
-  Pill
+  Pill,
+  Moon,
+  Sun,
+  Sunrise,
+  Sunset
 } from 'lucide-react';
 import { Medication, ScheduleItem, MealRelation, TimeSlot, MedicationForm } from '../types.ts';
 import { getTimeSlotFromTime } from '../utils/helpers.ts';
@@ -24,6 +28,7 @@ interface MedicationModalProps {
   onDelete?: (id: string) => void;
   initialMedication?: Medication | null;
   defaultAsSpecial?: boolean;
+  defaultTimeSlot?: 'morning' | 'afternoon' | 'evening' | 'night';
 }
 
 const COMMON_DRUGS = [
@@ -70,6 +75,7 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
   onDelete,
   initialMedication,
   defaultAsSpecial = false,
+  defaultTimeSlot = 'morning',
 }) => {
   const [name, setName] = useState('');
   const [dosage, setDosage] = useState('');
@@ -121,27 +127,43 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
       setSpecialConditionReason('');
       setSpecialMaxDosesPerDay(3);
       
-      // Default: 1 morning schedule (7:00 AM before breakfast)
+      // Check default schedule slot
       if (!defaultAsSpecial) {
-        setSchedules([
-          {
-            id: `sch-${Date.now()}`,
-            time: '07:00',
-            slot: 'morning',
-            label: 'Morning Dose',
-            mealRelation: 'before_meal',
-            mealName: 'Breakfast',
-            reminderEnabled: true,
-            reminderMinutesBefore: 0,
-            soundEnabled: true,
-          },
-        ]);
+        if (defaultTimeSlot === 'night') {
+          setSchedules([
+            {
+              id: `sch-${Date.now()}`,
+              time: '22:00',
+              slot: 'night',
+              label: 'Night / Bedtime Dose',
+              mealRelation: 'anytime',
+              mealName: 'Bedtime',
+              reminderEnabled: true,
+              reminderMinutesBefore: 0,
+              soundEnabled: true,
+            },
+          ]);
+        } else {
+          setSchedules([
+            {
+              id: `sch-${Date.now()}`,
+              time: '07:00',
+              slot: 'morning',
+              label: 'Morning Dose',
+              mealRelation: 'before_meal',
+              mealName: 'Breakfast',
+              reminderEnabled: true,
+              reminderMinutesBefore: 0,
+              soundEnabled: true,
+            },
+          ]);
+        }
       } else {
         setSchedules([]);
       }
     }
     setErrors({});
-  }, [initialMedication, defaultAsSpecial, isOpen]);
+  }, [initialMedication, defaultAsSpecial, defaultTimeSlot, isOpen]);
 
   if (!isOpen) return null;
 
@@ -163,6 +185,133 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
 
   const handleRemoveSchedule = (id: string) => {
     setSchedules(schedules.filter((s) => s.id !== id));
+  };
+
+  const handleApplyFrequencyPattern = (pattern: '1x' | '2x' | '3x' | '4x') => {
+    const baseId = Date.now();
+    if (pattern === '1x') {
+      setSchedules([
+        {
+          id: `sch-${baseId}-1`,
+          time: '08:00',
+          slot: 'morning',
+          label: 'Morning Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Breakfast',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+      ]);
+    } else if (pattern === '2x') {
+      setSchedules([
+        {
+          id: `sch-${baseId}-1`,
+          time: '08:00',
+          slot: 'morning',
+          label: 'Morning Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Breakfast',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-2`,
+          time: '22:00',
+          slot: 'night',
+          label: 'Night / Bedtime Dose',
+          mealRelation: 'anytime',
+          mealName: 'Bedtime',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+      ]);
+    } else if (pattern === '3x') {
+      setSchedules([
+        {
+          id: `sch-${baseId}-1`,
+          time: '08:00',
+          slot: 'morning',
+          label: 'Morning Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Breakfast',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-2`,
+          time: '13:00',
+          slot: 'afternoon',
+          label: 'Afternoon Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Lunch',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-3`,
+          time: '21:30',
+          slot: 'night',
+          label: 'Night / Bedtime Dose',
+          mealRelation: 'anytime',
+          mealName: 'Bedtime',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+      ]);
+    } else if (pattern === '4x') {
+      setSchedules([
+        {
+          id: `sch-${baseId}-1`,
+          time: '08:00',
+          slot: 'morning',
+          label: 'Morning Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Breakfast',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-2`,
+          time: '13:00',
+          slot: 'afternoon',
+          label: 'Afternoon Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Lunch',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-3`,
+          time: '19:30',
+          slot: 'evening',
+          label: 'Evening Dose',
+          mealRelation: 'after_meal',
+          mealName: 'Dinner',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+        {
+          id: `sch-${baseId}-4`,
+          time: '22:00',
+          slot: 'night',
+          label: 'Night / Bedtime Dose',
+          mealRelation: 'anytime',
+          mealName: 'Bedtime',
+          reminderEnabled: true,
+          reminderMinutesBefore: 0,
+          soundEnabled: true,
+        },
+      ]);
+    }
   };
 
   const handleUpdateSchedule = (id: string, updates: Partial<ScheduleItem>) => {
@@ -446,25 +595,89 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                     <span>Dosing Schedule & Meal Timing</span>
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Specify exact hour and whether to take before eating, with food, or after eating
+                    Schedule across Morning, Afternoon, Evening, and Night with precise meal instructions
                   </p>
                 </div>
 
-                {/* Add another time */}
-                <button
-                  id="btn-add-schedule-item"
-                  type="button"
-                  onClick={() => handleAddSchedule()}
-                  className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-3 py-1.5 rounded-lg transition-colors self-start sm:self-auto"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Another Time</span>
-                </button>
+                {/* Add Time Buttons: Daytime & Night / Bedtime */}
+                <div className="flex items-center gap-1.5 self-start sm:self-auto">
+                  <button
+                    id="btn-add-schedule-item"
+                    type="button"
+                    onClick={() => handleAddSchedule()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 px-2.5 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Add Time</span>
+                  </button>
+                  <button
+                    id="btn-add-night-schedule-item"
+                    type="button"
+                    onClick={() =>
+                      handleAddSchedule({
+                        time: '22:00',
+                        label: 'Night / Bedtime Dose',
+                        mealRelation: 'anytime',
+                        mealName: 'Bedtime',
+                      })
+                    }
+                    className="inline-flex items-center gap-1 text-xs font-bold text-purple-800 bg-purple-100 hover:bg-purple-200 border border-purple-300 px-2.5 py-1.5 rounded-lg transition-colors shadow-xs"
+                  >
+                    <Moon className="w-3.5 h-3.5 text-purple-600" />
+                    <span>+ Add Night / Bedtime Dose</span>
+                  </button>
+                </div>
               </div>
 
-              {/* Quick Preset Buttons for Common Schedules */}
+              {/* Standard Daily Frequency Regimens */}
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-amber-500" />
+                    <span>Daily Frequency Patterns (Auto-fill doses):</span>
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyFrequencyPattern('1x')}
+                    className="text-[11px] font-medium text-left p-1.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 transition-colors"
+                  >
+                    <span className="font-bold text-slate-900 block">1x Daily</span>
+                    <span className="text-[10px] text-slate-500">Morning (8:00 AM)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyFrequencyPattern('2x')}
+                    className="text-[11px] font-medium text-left p-1.5 rounded-lg bg-white hover:bg-purple-50 border border-purple-200 hover:border-purple-300 transition-colors"
+                  >
+                    <span className="font-bold text-purple-900 block flex items-center gap-1">
+                      2x Daily <Moon className="w-3 h-3 text-purple-600 inline" />
+                    </span>
+                    <span className="text-[10px] text-purple-700">Morning + Night (10 PM)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyFrequencyPattern('3x')}
+                    className="text-[11px] font-medium text-left p-1.5 rounded-lg bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-300 transition-colors"
+                  >
+                    <span className="font-bold text-slate-900 block">3x Daily</span>
+                    <span className="text-[10px] text-slate-500">Morning + Lunch + Night</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyFrequencyPattern('4x')}
+                    className="text-[11px] font-medium text-left p-1.5 rounded-lg bg-white hover:bg-purple-50 border border-slate-200 hover:border-purple-300 transition-colors"
+                  >
+                    <span className="font-bold text-slate-900 block">4x Daily</span>
+                    <span className="text-[10px] text-slate-500">Morning, Lunch, Eve, Night</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Individual Time Presets */}
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-semibold text-slate-400">Quick presets:</span>
+                <span className="text-[11px] font-semibold text-slate-400">Quick add single time:</span>
                 <button
                   type="button"
                   onClick={() =>
@@ -475,24 +688,26 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                       mealName: 'Breakfast',
                     })
                   }
-                  className="text-[11px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-md"
+                  className="text-[11px] font-medium bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2 py-1 rounded-md flex items-center gap-1"
                 >
-                  7:00 AM (Before Breakfast)
+                  <Sunrise className="w-3 h-3 text-amber-600" />
+                  <span>7:00 AM (Before Breakfast)</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() =>
                     handleAddSchedule({
-                      time: '07:45',
+                      time: '08:00',
                       label: 'Morning After Breakfast',
                       mealRelation: 'after_meal',
                       mealName: 'Breakfast',
                     })
                   }
-                  className="text-[11px] font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-md"
+                  className="text-[11px] font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-1 rounded-md flex items-center gap-1"
                 >
-                  7:45 AM (After Breakfast)
+                  <Sun className="w-3 h-3 text-emerald-600" />
+                  <span>8:00 AM (After Breakfast)</span>
                 </button>
 
                 <button
@@ -505,24 +720,42 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                       mealName: 'Lunch',
                     })
                   }
-                  className="text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 px-2.5 py-1 rounded-md"
+                  className="text-[11px] font-medium bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 px-2 py-1 rounded-md flex items-center gap-1"
                 >
-                  1:00 PM (After Lunch)
+                  <Sun className="w-3 h-3 text-blue-600" />
+                  <span>1:00 PM (After Lunch)</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() =>
                     handleAddSchedule({
-                      time: '20:00',
+                      time: '19:30',
                       label: 'After Dinner',
                       mealRelation: 'after_meal',
                       mealName: 'Dinner',
                     })
                   }
-                  className="text-[11px] font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-2.5 py-1 rounded-md"
+                  className="text-[11px] font-medium bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-2 py-1 rounded-md flex items-center gap-1"
                 >
-                  8:00 PM (After Dinner)
+                  <Sunset className="w-3 h-3 text-indigo-600" />
+                  <span>7:30 PM (After Dinner)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleAddSchedule({
+                      time: '21:30',
+                      label: 'Night Medication',
+                      mealRelation: 'anytime',
+                      mealName: 'Night',
+                    })
+                  }
+                  className="text-[11px] font-medium bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 px-2 py-1 rounded-md flex items-center gap-1"
+                >
+                  <Moon className="w-3 h-3 text-purple-600" />
+                  <span>9:30 PM (Night Routine)</span>
                 </button>
 
                 <button
@@ -530,14 +763,15 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                   onClick={() =>
                     handleAddSchedule({
                       time: '22:00',
-                      label: 'Bedtime',
+                      label: 'Night / Bedtime Dose',
                       mealRelation: 'anytime',
                       mealName: 'Bedtime',
                     })
                   }
-                  className="text-[11px] font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-md"
+                  className="text-[11px] font-bold bg-purple-100 hover:bg-purple-200 text-purple-950 border border-purple-300 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-xs"
                 >
-                  10:00 PM (Bedtime)
+                  <Moon className="w-3.5 h-3.5 text-purple-600" />
+                  <span>10:00 PM (Night / Bedtime)</span>
                 </button>
               </div>
 
@@ -557,6 +791,20 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                         className="inline-flex items-center gap-1 px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-bold text-xs shadow-xs"
                       >
                         <Plus className="w-3.5 h-3.5" /> Add Schedule Time
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleAddSchedule({
+                            time: '22:00',
+                            label: 'Night / Bedtime Dose',
+                            mealRelation: 'anytime',
+                            mealName: 'Bedtime',
+                          })
+                        }
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-purple-700 hover:bg-purple-800 text-white rounded-lg font-bold text-xs shadow-xs"
+                      >
+                        <Moon className="w-3.5 h-3.5" /> Add Night Schedule (10:00 PM)
                       </button>
                       {initialMedication && onDelete && (
                         <button
@@ -578,13 +826,38 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                   schedules.map((sch, index) => (
                     <div
                       key={sch.id}
-                      className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 space-y-3 relative"
+                      className={`p-4 rounded-xl border space-y-3 relative transition-all ${
+                        sch.slot === 'night'
+                          ? 'border-purple-200 bg-purple-50/40'
+                          : 'border-slate-200 bg-slate-50/70'
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-teal-600" />
-                          <span>Schedule #{index + 1}</span>
-                        </span>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-teal-600" />
+                            <span>Schedule #{index + 1}</span>
+                          </span>
+
+                          {/* Explicit Slot Badge */}
+                          {sch.slot === 'night' ? (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300 flex items-center gap-1">
+                              <Moon className="w-3 h-3 text-purple-600" /> Night Schedule (9:00 PM – 4:59 AM)
+                            </span>
+                          ) : sch.slot === 'morning' ? (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1">
+                              <Sunrise className="w-3 h-3 text-amber-600" /> Morning Schedule (5:00 AM – 11:59 AM)
+                            </span>
+                          ) : sch.slot === 'afternoon' ? (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300 flex items-center gap-1">
+                              <Sun className="w-3 h-3 text-blue-600" /> Afternoon Schedule (12:00 PM – 4:59 PM)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 flex items-center gap-1">
+                              <Sunset className="w-3 h-3 text-indigo-600" /> Evening Schedule (5:00 PM – 8:59 PM)
+                            </span>
+                          )}
+                        </div>
 
                         <button
                           type="button"
@@ -594,6 +867,83 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                           <span className="text-[11px] font-medium">Remove Schedule</span>
+                        </button>
+                      </div>
+
+                      {/* Quick slot switcher buttons right inside card */}
+                      <div className="flex flex-wrap items-center gap-1 bg-white/70 p-1.5 rounded-lg border border-slate-200">
+                        <span className="text-[10px] font-semibold text-slate-400 mr-1">Switch slot:</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSchedule(sch.id, {
+                              time: '08:00',
+                              mealRelation: 'after_meal',
+                              mealName: 'Breakfast',
+                              label: 'Morning Dose',
+                            })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                            sch.slot === 'morning'
+                              ? 'bg-amber-500 text-white font-bold'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          🌅 Morning (8 AM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSchedule(sch.id, {
+                              time: '13:00',
+                              mealRelation: 'after_meal',
+                              mealName: 'Lunch',
+                              label: 'Afternoon Dose',
+                            })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                            sch.slot === 'afternoon'
+                              ? 'bg-blue-600 text-white font-bold'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          ☀️ Afternoon (1 PM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSchedule(sch.id, {
+                              time: '19:30',
+                              mealRelation: 'after_meal',
+                              mealName: 'Dinner',
+                              label: 'Evening Dose',
+                            })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                            sch.slot === 'evening'
+                              ? 'bg-indigo-600 text-white font-bold'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                          }`}
+                        >
+                          🌇 Evening (7:30 PM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateSchedule(sch.id, {
+                              time: '22:00',
+                              mealRelation: 'anytime',
+                              mealName: 'Bedtime',
+                              label: 'Night / Bedtime Dose',
+                            })
+                          }
+                          className={`text-[10px] px-2 py-0.5 rounded font-medium ${
+                            sch.slot === 'night'
+                              ? 'bg-purple-700 text-white font-bold'
+                              : 'bg-purple-100 hover:bg-purple-200 text-purple-900 font-semibold'
+                          }`}
+                        >
+                          🌙 Night (10 PM)
                         </button>
                       </div>
 
@@ -629,7 +979,7 @@ export const MedicationModal: React.FC<MedicationModalProps> = ({
                           <option value="after_meal">☕ After Eating / Food</option>
                           <option value="with_meal">🥗 With Food / Meal</option>
                           <option value="empty_stomach">🥛 Strict Empty Stomach</option>
-                          <option value="anytime">⏱️ Anytime (No Food Restriction)</option>
+                          <option value="anytime">🌙 Bedtime / Anytime (No Food Restriction)</option>
                         </select>
                       </div>
                     </div>

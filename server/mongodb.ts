@@ -1,6 +1,6 @@
 import { MongoClient, Db, Collection } from 'mongodb';
-import { Medication, DoseLog } from '../src/types.ts';
-import { INITIAL_SAMPLE_MEDICATIONS } from '../src/utils/storage.ts';
+import { Medication, DoseLog, RoutineItem, RoutineLog } from '../src/types.ts';
+import { INITIAL_SAMPLE_MEDICATIONS, INITIAL_SAMPLE_ROUTINES } from '../src/utils/storage.ts';
 
 interface DbStatus {
   connected: boolean;
@@ -10,6 +10,8 @@ interface DbStatus {
   itemCounts?: {
     medications: number;
     logs: number;
+    routines: number;
+    routineLogs: number;
   };
 }
 
@@ -33,6 +35,17 @@ let inMemoryLogs: DoseLog[] = [
     status: 'taken',
     takenAt: `${new Date().toISOString().split('T')[0]}T07:05:00`,
     notes: 'Taken before breakfast with 250ml water',
+  },
+];
+let inMemoryRoutines: RoutineItem[] = [...INITIAL_SAMPLE_ROUTINES];
+let inMemoryRoutineLogs: RoutineLog[] = [
+  {
+    id: 'routine-log-seed-1',
+    routineId: 'routine-1',
+    date: new Date().toISOString().split('T')[0],
+    status: 'completed',
+    completedAt: `${new Date().toISOString().split('T')[0]}T06:20:00`,
+    notes: 'Had oatmeal with blueberries and warm lemon water',
   },
 ];
 
@@ -88,6 +101,21 @@ export async function getMongoDb(): Promise<Db | null> {
       await logsCol.insertMany(inMemoryLogs as any);
     }
 
+    // Seed initial routines if empty
+    const routinesCol = db.collection<RoutineItem>('routines');
+    const routinesCount = await routinesCol.countDocuments();
+    if (routinesCount === 0 && inMemoryRoutines.length > 0) {
+      console.log('[MongoDB] Seeding initial daily meals & routines into database...');
+      await routinesCol.insertMany(inMemoryRoutines as any);
+    }
+
+    // Seed initial routine logs if empty
+    const rLogsCol = db.collection<RoutineLog>('routine_logs');
+    const rLogsCount = await rLogsCol.countDocuments();
+    if (rLogsCount === 0 && inMemoryRoutineLogs.length > 0) {
+      await rLogsCol.insertMany(inMemoryRoutineLogs as any);
+    }
+
     return db;
   } catch (err: any) {
     connectionError = err.message || 'Failed to connect to MongoDB';
@@ -114,6 +142,8 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
       itemCounts: {
         medications: inMemoryMedications.length,
         logs: inMemoryLogs.length,
+        routines: inMemoryRoutines.length,
+        routineLogs: inMemoryRoutineLogs.length,
       },
     };
   }
@@ -128,12 +158,16 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
         itemCounts: {
           medications: inMemoryMedications.length,
           logs: inMemoryLogs.length,
+          routines: inMemoryRoutines.length,
+          routineLogs: inMemoryRoutineLogs.length,
         },
       };
     }
 
     const medsCount = await activeDb.collection('medications').countDocuments();
     const logsCount = await activeDb.collection('dose_logs').countDocuments();
+    const routinesCount = await activeDb.collection('routines').countDocuments();
+    const routineLogsCount = await activeDb.collection('routine_logs').countDocuments();
 
     return {
       connected: true,
@@ -142,6 +176,8 @@ export async function getDatabaseStatus(): Promise<DbStatus> {
       itemCounts: {
         medications: medsCount,
         logs: logsCount,
+        routines: routinesCount,
+        routineLogs: routineLogsCount,
       },
     };
   } catch (err: any) {
@@ -163,7 +199,27 @@ export async function getAllMedications(): Promise<Medication[]> {
       const col = activeDb.collection<Medication>('medications');
       const docs = await col.find({}).toArray();
       // Map out Mongo's _id if present and ensure clean Medication objects
-      return docs.map(({ _id, ...rest }: any) => rest as Medication);
+      const mapped = docs.map(({ _id, ...rest }: any) => rest as Medication);
+      return mapped.map((m) => {
+        if (m.id === 'med-4' && m.schedules.some((s) => s.time === '20:30')) {
+          return {
+            ...m,
+            instructions: 'Take once nightly at bedtime with water for cholesterol management.',
+            schedules: m.schedules.map((s) =>
+              s.time === '20:30'
+                ? {
+                    ...s,
+                    time: '21:30',
+                    slot: 'night' as const,
+                    label: 'Night / Bedtime Lipid Support',
+                    mealName: 'Bedtime',
+                  }
+                : s
+            ),
+          };
+        }
+        return m;
+      });
     }
   } catch (err) {
     console.warn('[MongoDB] Error querying medications from DB, using fallback:', err);
@@ -269,9 +325,119 @@ export async function saveDoseLog(log: DoseLog): Promise<DoseLog> {
 }
 
 /**
- * Reset all data to sample medications
+ * Fetch all routine & meal items
  */
-export async function resetToSamples(): Promise<Medication[]> {
+export async function getAllRoutines(): Promise<RoutineItem[]> {
+  try {
+    const activeDb = await getMongoDb();
+    if (activeDb) {
+      const col = activeDb.collection<RoutineItem>('routines');
+      const docs = await col.find({}).toArray();
+      return docs.map(({ _id, ...rest }: any) => rest as RoutineItem);
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error querying routines from DB, using fallback:', err);
+  }
+  return inMemoryRoutines;
+}
+
+/**
+ * Save or update a routine item
+ */
+export async function saveRoutine(routine: RoutineItem): Promise<RoutineItem> {
+  try {
+    const activeDb = await getMongoDb();
+    if (activeDb) {
+      const col = activeDb.collection<RoutineItem>('routines');
+      await col.updateOne({ id: routine.id }, { $set: routine }, { upsert: true });
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error saving routine to DB, updating fallback:', err);
+  }
+
+  const idx = inMemoryRoutines.findIndex((r) => r.id === routine.id);
+  if (idx >= 0) {
+    inMemoryRoutines[idx] = routine;
+  } else {
+    inMemoryRoutines.push(routine);
+  }
+
+  return routine;
+}
+
+/**
+ * Delete a routine item completely by ID
+ */
+export async function deleteRoutine(id: string): Promise<boolean> {
+  try {
+    const activeDb = await getMongoDb();
+    if (activeDb) {
+      const col = activeDb.collection<RoutineItem>('routines');
+      await col.deleteOne({ id });
+
+      const logsCol = activeDb.collection<RoutineLog>('routine_logs');
+      await logsCol.deleteMany({ routineId: id });
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error deleting routine from DB:', err);
+  }
+
+  inMemoryRoutines = inMemoryRoutines.filter((r) => r.id !== id);
+  inMemoryRoutineLogs = inMemoryRoutineLogs.filter((l) => l.routineId !== id);
+
+  return true;
+}
+
+/**
+ * Fetch routine logs (optionally filtered by date)
+ */
+export async function getAllRoutineLogs(date?: string): Promise<RoutineLog[]> {
+  try {
+    const activeDb = await getMongoDb();
+    if (activeDb) {
+      const col = activeDb.collection<RoutineLog>('routine_logs');
+      const query = date ? { date } : {};
+      const docs = await col.find(query).toArray();
+      return docs.map(({ _id, ...rest }: any) => rest as RoutineLog);
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error querying routine logs from DB, using fallback:', err);
+  }
+
+  if (date) {
+    return inMemoryRoutineLogs.filter((l) => l.date === date);
+  }
+  return inMemoryRoutineLogs;
+}
+
+/**
+ * Save or update a routine log
+ */
+export async function saveRoutineLog(log: RoutineLog): Promise<RoutineLog> {
+  try {
+    const activeDb = await getMongoDb();
+    if (activeDb) {
+      const col = activeDb.collection<RoutineLog>('routine_logs');
+      await col.updateOne({ id: log.id }, { $set: log }, { upsert: true });
+    }
+  } catch (err) {
+    console.warn('[MongoDB] Error saving routine log to DB:', err);
+  }
+
+  const idx = inMemoryRoutineLogs.findIndex((l) => l.id === log.id);
+  if (idx >= 0) {
+    inMemoryRoutineLogs[idx] = log;
+  } else {
+    inMemoryRoutineLogs.push(log);
+  }
+
+  return log;
+}
+
+/**
+ * Reset all data to sample medications and routines
+ */
+export async function resetToSamples(): Promise<{ medications: Medication[]; routines: RoutineItem[] }> {
   try {
     const activeDb = await getMongoDb();
     if (activeDb) {
@@ -281,6 +447,13 @@ export async function resetToSamples(): Promise<Medication[]> {
 
       const logsCol = activeDb.collection('dose_logs');
       await logsCol.deleteMany({});
+
+      const routinesCol = activeDb.collection('routines');
+      await routinesCol.deleteMany({});
+      await routinesCol.insertMany(INITIAL_SAMPLE_ROUTINES as any);
+
+      const rLogsCol = activeDb.collection('routine_logs');
+      await rLogsCol.deleteMany({});
     }
   } catch (err) {
     console.warn('[MongoDB] Error resetting sample data in DB:', err);
@@ -288,6 +461,8 @@ export async function resetToSamples(): Promise<Medication[]> {
 
   inMemoryMedications = [...INITIAL_SAMPLE_MEDICATIONS];
   inMemoryLogs = [];
+  inMemoryRoutines = [...INITIAL_SAMPLE_ROUTINES];
+  inMemoryRoutineLogs = [];
 
-  return inMemoryMedications;
+  return { medications: inMemoryMedications, routines: inMemoryRoutines };
 }

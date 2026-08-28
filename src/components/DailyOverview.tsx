@@ -7,39 +7,72 @@ import {
   ArrowRight, 
   Utensils, 
   CheckCheck,
-  ShieldAlert
+  ShieldAlert,
+  Apple,
+  Pill
 } from 'lucide-react';
-import { DailyDoseItem } from '../types.ts';
+import { DailyDoseItem, DailyRoutineItem } from '../types.ts';
 import { formatTime24to12, getMealRelationInfo } from '../utils/helpers.ts';
 
-export type FilterStatus = 'all' | 'pending' | 'taken' | 'skipped' | 'special';
+export type FilterStatus = 'all' | 'pending' | 'taken' | 'medications' | 'routines' | 'skipped' | 'special';
 
 interface DailyOverviewProps {
   items: DailyDoseItem[];
+  routineItems?: DailyRoutineItem[];
   specialMedsCount: number;
   activeFilter: FilterStatus;
   onFilterChange: (filter: FilterStatus) => void;
   onQuickTakeDose: (item: DailyDoseItem) => void;
+  onQuickCompleteRoutine?: (item: DailyRoutineItem) => void;
 }
 
 export const DailyOverview: React.FC<DailyOverviewProps> = ({
   items,
+  routineItems = [],
   specialMedsCount,
   activeFilter,
   onFilterChange,
   onQuickTakeDose,
+  onQuickCompleteRoutine,
 }) => {
   // Only regular scheduled items contribute to the standard daily progress
   const regularItems = items.filter((it) => !it.isSpecialDose);
-  const totalCount = regularItems.length;
-  const takenCount = regularItems.filter((it) => it.status === 'taken').length;
-  const pendingCount = regularItems.filter((it) => it.status === 'pending').length;
+  const totalMedsCount = regularItems.length;
+  const takenMedsCount = regularItems.filter((it) => it.status === 'taken').length;
+  const pendingMedsCount = regularItems.filter((it) => it.status === 'pending').length;
   const skippedCount = regularItems.filter((it) => it.status === 'skipped').length;
-  
-  const percentage = totalCount > 0 ? Math.round((takenCount / totalCount) * 100) : 100;
 
-  // Find next pending dose
-  const nextPending = regularItems.find((it) => it.status === 'pending');
+  // Routines metrics
+  const totalRoutinesCount = routineItems.length;
+  const completedRoutinesCount = routineItems.filter((r) => r.status === 'completed').length;
+  const pendingRoutinesCount = routineItems.filter((r) => r.status === 'pending').length;
+
+  // Combined totals
+  const totalCombined = totalMedsCount + totalRoutinesCount;
+  const completedCombined = takenMedsCount + completedRoutinesCount;
+  const pendingCombined = pendingMedsCount + pendingRoutinesCount;
+
+  const percentage = totalCombined > 0 
+    ? Math.round((completedCombined / totalCombined) * 100) 
+    : 100;
+
+  // Find next pending item (either medication dose or meal/routine, sorted by scheduled time)
+  const nextPendingMed = regularItems.find((it) => it.status === 'pending');
+  const nextPendingRoutine = routineItems.find((r) => r.status === 'pending');
+
+  let nextUpcoming: { type: 'med'; item: DailyDoseItem } | { type: 'routine'; item: DailyRoutineItem } | null = null;
+
+  if (nextPendingMed && nextPendingRoutine) {
+    if (nextPendingRoutine.scheduledTime <= nextPendingMed.scheduledTime) {
+      nextUpcoming = { type: 'routine', item: nextPendingRoutine };
+    } else {
+      nextUpcoming = { type: 'med', item: nextPendingMed };
+    }
+  } else if (nextPendingMed) {
+    nextUpcoming = { type: 'med', item: nextPendingMed };
+  } else if (nextPendingRoutine) {
+    nextUpcoming = { type: 'routine', item: nextPendingRoutine };
+  }
 
   return (
     <div id="daily-overview-container" className="space-y-4">
@@ -82,39 +115,48 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
             <div className="space-y-1.5 flex-1">
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-slate-900">
-                  Daily Regimen Progress
+                  Daily Schedule & Meal Regimen
                 </h2>
-                {percentage === 100 && totalCount > 0 && (
+                {percentage === 100 && totalCombined > 0 && (
                   <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                    <CheckCheck className="w-3 h-3" /> All Done
+                    <CheckCheck className="w-3 h-3" /> All Complete
                   </span>
                 )}
               </div>
 
               <p className="text-xs sm:text-sm text-slate-600">
-                {totalCount === 0 ? (
-                  'No scheduled medications for this day.'
+                {totalCombined === 0 ? (
+                  'No scheduled items for this day.'
                 ) : percentage === 100 ? (
-                  'All scheduled medications have been marked taken. Keep up the great health routine!'
+                  'All scheduled medications, meals, and routines have been completed. Great job maintaining your health schedule!'
                 ) : (
                   <span>
-                    <strong className="text-teal-700 font-semibold">{takenCount}</strong> of{' '}
-                    <strong className="text-slate-800 font-semibold">{totalCount}</strong> doses completed today.{' '}
-                    <strong className="text-amber-700 font-semibold">{pendingCount}</strong> pending.
+                    <strong className="text-teal-700 font-semibold">{completedCombined}</strong> of{' '}
+                    <strong className="text-slate-800 font-semibold">{totalCombined}</strong> daily actions completed today.{' '}
+                    <strong className="text-amber-700 font-semibold">{pendingCombined}</strong> pending.
                   </span>
                 )}
               </p>
 
               {/* Mini Stat Badges */}
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>{takenCount} Taken</span>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-200 text-teal-800 text-xs font-medium">
+                  <Pill className="w-3.5 h-3.5 text-teal-600" />
+                  <span>{takenMedsCount}/{totalMedsCount} Meds</span>
                 </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+
+                {totalRoutinesCount > 0 && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+                    <Utensils className="w-3.5 h-3.5 text-amber-600" />
+                    <span>{completedRoutinesCount}/{totalRoutinesCount} Meals & Routines</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50/80 border border-amber-200 text-amber-800 text-xs font-medium">
                   <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>{pendingCount} Pending</span>
+                  <span>{pendingCombined} Pending</span>
                 </div>
+
                 {skippedCount > 0 && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium">
                     <AlertCircle className="w-3.5 h-3.5 text-slate-500" />
@@ -125,46 +167,81 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
             </div>
           </div>
 
-          {/* Next Dose Callout */}
+          {/* Next Action Callout */}
           <div className="lg:col-span-5 bg-slate-50 rounded-xl border border-slate-200/80 p-4">
-            {nextPending ? (
+            {nextUpcoming ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-teal-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Clock className="w-3 h-3 text-teal-600" /> Next Upcoming Dose
+                    <Clock className="w-3 h-3 text-teal-600" /> 
+                    {nextUpcoming.type === 'med' ? 'Next Upcoming Dose' : 'Next Upcoming Meal / Routine'}
                   </span>
                   <span className="text-xs font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    {formatTime24to12(nextPending.scheduledTime)}
+                    {formatTime24to12(nextUpcoming.item.scheduledTime)}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-bold text-slate-900 truncate">
-                      {nextPending.medication.name}
-                    </p>
-                    <p className="text-xs text-slate-500 truncate">
-                      {nextPending.medication.dosage}
-                    </p>
-                  </div>
+                {nextUpcoming.type === 'med' ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900 truncate">
+                          {nextUpcoming.item.medication.name}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {nextUpcoming.item.medication.dosage}
+                        </p>
+                      </div>
 
-                  <button
-                    id="btn-quick-take-next"
-                    type="button"
-                    onClick={() => onQuickTakeDose(nextPending)}
-                    className="shrink-0 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition-colors"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Mark Taken</span>
-                  </button>
-                </div>
+                      <button
+                        id="btn-quick-take-next"
+                        type="button"
+                        onClick={() => onQuickTakeDose((nextUpcoming as { type: 'med'; item: DailyDoseItem }).item)}
+                        className="shrink-0 inline-flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition-colors"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Mark Taken</span>
+                      </button>
+                    </div>
 
-                <div className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-0.5">
-                  <Utensils className="w-3 h-3 text-amber-600 shrink-0" />
-                  <span className="truncate">
-                    {getMealRelationInfo(nextPending.mealRelation, nextPending.mealName).label}
-                  </span>
-                </div>
+                    <div className="text-[11px] text-slate-600 flex items-center gap-1.5 pt-0.5">
+                      <Utensils className="w-3 h-3 text-amber-600 shrink-0" />
+                      <span className="truncate">
+                        {getMealRelationInfo(nextUpcoming.item.mealRelation, nextUpcoming.item.mealName).label}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900 truncate">
+                          {nextUpcoming.item.routine.title}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {nextUpcoming.item.routine.description || 'Scheduled daily routine'}
+                        </p>
+                      </div>
+
+                      {onQuickCompleteRoutine && (
+                        <button
+                          id="btn-quick-complete-routine"
+                          type="button"
+                          onClick={() => onQuickCompleteRoutine((nextUpcoming as { type: 'routine'; item: DailyRoutineItem }).item)}
+                          className="shrink-0 inline-flex items-center gap-1.5 bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-xs transition-colors"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Mark Done</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] text-amber-800 font-medium flex items-center gap-1.5 pt-0.5">
+                      <Apple className="w-3 h-3 text-amber-600 shrink-0" />
+                      <span className="capitalize">{nextUpcoming.item.routine.category} Schedule</span>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <div className="flex items-center gap-3 py-1">
@@ -173,10 +250,10 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
                 </div>
                 <div>
                   <p className="text-xs font-bold text-slate-900">
-                    No Pending Doses
+                    No Pending Schedule
                   </p>
                   <p className="text-xs text-slate-500">
-                    All scheduled items for today have been addressed.
+                    All scheduled medications and meals for today are complete!
                   </p>
                 </div>
               </div>
@@ -187,45 +264,73 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
       </div>
 
       {/* Filter Tabs */}
-      <div id="status-filter-bar" className="flex items-center justify-between gap-2 overflow-x-auto pb-1">
+      <div id="status-filter-bar" className="flex items-center justify-between gap-2 overflow-x-auto pb-1 scrollbar-thin">
         <div className="flex items-center gap-1.5">
           <button
             id="filter-all"
             type="button"
             onClick={() => onFilterChange('all')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
               activeFilter === 'all'
                 ? 'bg-slate-900 text-white shadow-xs'
                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
-            All Doses ({items.length})
+            All Events ({totalCombined})
           </button>
 
           <button
             id="filter-pending"
             type="button"
             onClick={() => onFilterChange('pending')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
               activeFilter === 'pending'
                 ? 'bg-amber-600 text-white shadow-xs'
                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
-            Pending ({pendingCount})
+            Pending ({pendingCombined})
+          </button>
+
+          <button
+            id="filter-medications"
+            type="button"
+            onClick={() => onFilterChange('medications')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              activeFilter === 'medications'
+                ? 'bg-teal-700 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Pill className="w-3.5 h-3.5" />
+            <span>Medications ({totalMedsCount})</span>
+          </button>
+
+          <button
+            id="filter-routines"
+            type="button"
+            onClick={() => onFilterChange('routines')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              activeFilter === 'routines'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Utensils className="w-3.5 h-3.5" />
+            <span>Meals & Routines ({totalRoutinesCount})</span>
           </button>
 
           <button
             id="filter-taken"
             type="button"
             onClick={() => onFilterChange('taken')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
               activeFilter === 'taken'
-                ? 'bg-teal-600 text-white shadow-xs'
+                ? 'bg-emerald-600 text-white shadow-xs'
                 : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             }`}
           >
-            Completed ({takenCount})
+            Completed ({completedCombined})
           </button>
 
           {skippedCount > 0 && (
@@ -233,7 +338,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
               id="filter-skipped"
               type="button"
               onClick={() => onFilterChange('skipped')}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
                 activeFilter === 'skipped'
                   ? 'bg-slate-700 text-white shadow-xs'
                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -247,7 +352,7 @@ export const DailyOverview: React.FC<DailyOverviewProps> = ({
             id="filter-special"
             type="button"
             onClick={() => onFilterChange('special')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
               activeFilter === 'special'
                 ? 'bg-purple-700 text-white shadow-xs'
                 : 'bg-white text-purple-700 hover:bg-purple-50 border border-purple-200'

@@ -10,7 +10,8 @@ import {
   Bell, 
   BellOff, 
   Volume2,
-  Database
+  Database,
+  Utensils
 } from 'lucide-react';
 import { formatDisplayDate, getTodayDateString } from '../utils/helpers.ts';
 import { soundManager } from '../utils/audio.ts';
@@ -20,6 +21,7 @@ interface HeaderProps {
   currentDate: string;
   onDateChange: (date: string) => void;
   onOpenAddModal: () => void;
+  onOpenAddRoutineModal?: () => void;
   onOpenManageModal: () => void;
   onOpenPrintModal: () => void;
   soundEnabled: boolean;
@@ -34,6 +36,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentDate,
   onDateChange,
   onOpenAddModal,
+  onOpenAddRoutineModal,
   onOpenManageModal,
   onOpenPrintModal,
   soundEnabled,
@@ -120,6 +123,17 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 {soundEnabled ? <Volume2 className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
               </button>
+              {onOpenAddRoutineModal && (
+                <button
+                  id="btn-add-routine-mobile"
+                  type="button"
+                  onClick={onOpenAddRoutineModal}
+                  title="Add Meal / Routine"
+                  className="bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-lg text-xs font-semibold shadow-xs"
+                >
+                  <Utensils className="w-4 h-4" />
+                </button>
+              )}
               <button
                 id="btn-add-medication-mobile"
                 type="button"
@@ -262,6 +276,19 @@ export const Header: React.FC<HeaderProps> = ({
               <Settings2 className="w-3.5 h-3.5 text-slate-500" />
               <span>Manage List</span>
             </button>
+
+            {/* Add Meal / Routine */}
+            {onOpenAddRoutineModal && (
+              <button
+                id="btn-add-routine-desktop"
+                type="button"
+                onClick={onOpenAddRoutineModal}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors"
+              >
+                <Utensils className="w-4 h-4" />
+                <span>Add Meal / Routine</span>
+              </button>
+            )}
 
             {/* Primary Add Medication */}
             <button

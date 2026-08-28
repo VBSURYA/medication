@@ -1,18 +1,20 @@
 import React from 'react';
-import { X, Printer, Pill, Clock, Utensils, ShieldAlert, Check } from 'lucide-react';
-import { Medication, ScheduleItem } from '../types.ts';
+import { X, Printer, Pill, Clock, Utensils, ShieldAlert, Check, Apple } from 'lucide-react';
+import { Medication, ScheduleItem, RoutineItem } from '../types.ts';
 import { formatTime24to12, getMealRelationInfo } from '../utils/helpers.ts';
 
 interface PrintScheduleModalProps {
   isOpen: boolean;
   onClose: () => void;
   medications: Medication[];
+  routines?: RoutineItem[];
 }
 
 export const PrintScheduleModal: React.FC<PrintScheduleModalProps> = ({
   isOpen,
   onClose,
   medications,
+  routines = [],
 }) => {
   if (!isOpen) return null;
 
@@ -31,6 +33,9 @@ export const PrintScheduleModal: React.FC<PrintScheduleModalProps> = ({
     });
 
   routineRows.sort((a, b) => a.schedule.time.localeCompare(b.schedule.time));
+
+  // Sort routines by time
+  const sortedRoutines = [...routines].sort((a, b) => a.time.localeCompare(b.time));
 
   const specialMeds = medications.filter((m) => m.isSpecialCondition);
 
@@ -141,12 +146,55 @@ export const PrintScheduleModal: React.FC<PrintScheduleModalProps> = ({
             </div>
           </div>
 
+          {/* Daily Meals & Wellness Routines Table */}
+          {sortedRoutines.length > 0 && (
+            <div className="space-y-3 pt-2">
+              <h3 className="text-sm font-bold text-amber-900 flex items-center gap-1.5 uppercase tracking-wide">
+                <Utensils className="w-4 h-4 text-amber-700" />
+                <span>2. Daily Meal & Wellness Routine Schedule</span>
+              </h3>
+
+              <div className="overflow-x-auto rounded-xl border border-amber-300">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-amber-100/70 text-amber-900 uppercase font-bold border-b border-amber-300">
+                    <tr>
+                      <th className="py-2.5 px-3">Time</th>
+                      <th className="py-2.5 px-3">Routine / Meal Title</th>
+                      <th className="py-2.5 px-3">Category</th>
+                      <th className="py-2.5 px-3">Details & Instructions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {sortedRoutines.map((r) => (
+                      <tr key={r.id} className="hover:bg-amber-50/40">
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900 whitespace-nowrap">
+                          {formatTime24to12(r.time)}
+                        </td>
+                        <td className="py-3 px-3 font-bold text-slate-900">
+                          {r.title}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="capitalize px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 font-semibold">
+                            {r.category}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-slate-600">
+                          {r.description || 'Daily scheduled routine'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Special Condition Table */}
           {specialMeds.length > 0 && (
             <div className="space-y-3 pt-2">
               <h3 className="text-sm font-bold text-purple-900 flex items-center gap-1.5 uppercase tracking-wide">
                 <ShieldAlert className="w-4 h-4 text-purple-700" />
-                <span>2. Special Condition & As-Needed (PRN) Medications</span>
+                <span>3. Special Condition & As-Needed (PRN) Medications</span>
               </h3>
 
               <div className="overflow-x-auto rounded-xl border border-purple-200">

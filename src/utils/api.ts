@@ -1,4 +1,4 @@
-import { Medication, DoseLog } from '../types.ts';
+import { Medication, DoseLog, RoutineItem, RoutineLog } from '../types.ts';
 
 export interface DbStatusResponse {
   connected: boolean;
@@ -8,6 +8,8 @@ export interface DbStatusResponse {
   itemCounts?: {
     medications: number;
     logs: number;
+    routines?: number;
+    routineLogs?: number;
   };
 }
 
@@ -98,6 +100,77 @@ export async function apiSaveDoseLog(log: DoseLog): Promise<boolean> {
   }
 }
 
+export async function fetchApiRoutines(): Promise<RoutineItem[] | null> {
+  try {
+    const res = await fetch('/api/routines');
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      return data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[API] Unable to load routines from API, will use local storage:', err);
+    return null;
+  }
+}
+
+export async function apiSaveRoutine(routine: RoutineItem): Promise<boolean> {
+  try {
+    const res = await fetch('/api/routines', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(routine),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[API] Error saving routine to server API:', err);
+    return false;
+  }
+}
+
+export async function apiDeleteRoutine(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/routines/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[API] Error deleting routine from server API:', err);
+    return false;
+  }
+}
+
+export async function fetchApiRoutineLogs(date?: string): Promise<RoutineLog[] | null> {
+  try {
+    const url = date ? `/api/routine-logs?date=${encodeURIComponent(date)}` : '/api/routine-logs';
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (Array.isArray(data)) {
+      return data;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[API] Unable to load routine logs from API, will use local storage:', err);
+    return null;
+  }
+}
+
+export async function apiSaveRoutineLog(log: RoutineLog): Promise<boolean> {
+  try {
+    const res = await fetch('/api/routine-logs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(log),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('[API] Error saving routine log to server API:', err);
+    return false;
+  }
+}
+
 export async function apiResetSamples(): Promise<boolean> {
   try {
     const res = await fetch('/api/reset-samples', {
@@ -109,3 +182,4 @@ export async function apiResetSamples(): Promise<boolean> {
     return false;
   }
 }
+

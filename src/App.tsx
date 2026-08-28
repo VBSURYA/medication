@@ -15,19 +15,24 @@ import {
   Moon, 
   ShieldAlert, 
   CheckCircle2, 
-  CheckCheck,
-  AlertCircle,
-  Filter,
-  Sparkles,
-  Utensils,
-  Volume2
+  CheckCheck, 
+  AlertCircle, 
+  Filter, 
+  Sparkles, 
+  Utensils, 
+  Volume2,
+  Apple
 } from 'lucide-react';
 import { 
   Medication, 
   DoseLog, 
   DailyDoseItem, 
   DoseStatus, 
-  TimeSlot 
+  TimeSlot,
+  RoutineItem,
+  RoutineLog,
+  DailyRoutineItem,
+  RoutineStatus
 } from './types.ts';
 import { 
   getStoredMedications, 
@@ -36,6 +41,12 @@ import {
   saveLogs, 
   getDailyDoseItems,
   INITIAL_SAMPLE_MEDICATIONS,
+  getStoredRoutines,
+  saveRoutines,
+  getStoredRoutineLogs,
+  saveRoutineLogs,
+  getDailyRoutineItems,
+  INITIAL_SAMPLE_ROUTINES,
   getReminderSettings,
   saveReminderSettings
 } from './utils/storage.ts';
@@ -51,6 +62,8 @@ import { isScheduleDue, requestBrowserNotificationPermission, sendBrowserNotific
 import { Header } from './components/Header.tsx';
 import { DailyOverview, FilterStatus } from './components/DailyOverview.tsx';
 import { DoseCard } from './components/DoseCard.tsx';
+import { RoutineCard } from './components/RoutineCard.tsx';
+import { RoutineModal } from './components/RoutineModal.tsx';
 import { SpecialMedicationSection } from './components/SpecialMedicationSection.tsx';
 import { MedicationModal } from './components/MedicationModal.tsx';
 import { ManageMedicationsModal } from './components/ManageMedicationsModal.tsx';
@@ -66,14 +79,25 @@ import {
   apiDeleteMedication, 
   fetchApiLogs, 
   apiSaveDoseLog, 
+  fetchApiRoutines,
+  apiSaveRoutine,
+  apiDeleteRoutine,
+  fetchApiRoutineLogs,
+  apiSaveRoutineLog,
   apiResetSamples, 
   DbStatusResponse 
 } from './utils/api.ts';
+
+export type UnifiedSlotItem = 
+  | { type: 'dose'; item: DailyDoseItem; time: string }
+  | { type: 'routine'; item: DailyRoutineItem; time: string };
 
 export default function App() {
   // 1. Core State
   const [medications, setMedications] = useState<Medication[]>(() => getStoredMedications());
   const [logs, setLogs] = useState<DoseLog[]>(() => getStoredLogs());
+  const [routines, setRoutines] = useState<RoutineItem[]>(() => getStoredRoutines());
+  const [routineLogs, setRoutineLogs] = useState<RoutineLog[]>(() => getStoredRoutineLogs());
   const [currentDate, setCurrentDate] = useState<string>(() => getTodayDateString());
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => getReminderSettings().soundEnabled);
   const [activeFilter, setActiveFilter] = useState<FilterStatus>('all');
@@ -81,7 +105,10 @@ export default function App() {
   // 2. Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalAsSpecial, setAddModalAsSpecial] = useState(false);
+  const [addModalDefaultSlot, setAddModalDefaultSlot] = useState<'morning' | 'afternoon' | 'evening' | 'night'>('morning');
   const [editingMedication, setEditingMedication] = useState<Medication | null>(null);
+  const [isRoutineModalOpen, setIsRoutineModalOpen] = useState(false);
+  const [editingRoutine, setEditingRoutine] = useState<RoutineItem | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [skipModalItem, setSkipModalItem] = useState<DailyDoseItem | null>(null);
@@ -99,7 +126,7 @@ export default function App() {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   });
 
-  // Keep storage in sync
+  // Keep local storage in sync
   useEffect(() => {
     saveMedications(medications);
   }, [medications]);
@@ -108,7 +135,15 @@ export default function App() {
     saveLogs(logs);
   }, [logs]);
 
-  // Initial MongoDB & API sync on mount
+  useEffect(() => {
+    saveRoutines(routines);
+  }, [routines]);
+
+  useEffect(() => {
+    saveRoutineLogs(routineLogs);
+  }, [routineLogs]);
+
+  // Initial MongoDB & API sync on mount and date change
   useEffect(() => {
     let mounted = true;
     async function syncBackendData() {
@@ -126,6 +161,25 @@ export default function App() {
         if (mounted && apiLogs && apiLogs.length > 0) {
           setLogs((prev) => {
             const merged = [...apiLogs];
+            for (const l of prev) {
+              if (!merged.some((m) => m.id === l.id)) {
+                merged.push(l);
+              }
+            }
+            return merged;
+          });
+        }
+
+        const apiRoutinesData = await fetchApiRoutines();
+        if (mounted && apiRoutinesData && apiRoutinesData.length > 0) {
+          setRoutines(apiRoutinesData);
+          saveRoutines(apiRoutinesData);
+        }
+
+        const apiRLogs = await fetchApiRoutineLogs(currentDate);
+        if (mounted && apiRLogs && apiRLogs.length > 0) {
+          setRoutineLogs((prev) => {
+            const merged = [...apiRLogs];
             for (const l of prev) {
               if (!merged.some((m) => m.id === l.id)) {
                 merged.push(l);
@@ -171,7 +225,7 @@ export default function App() {
       if (!alertedMinutesRef.current.has(minuteKey)) {
         alertedMinutesRef.current.add(minuteKey);
 
-        // Find if any medication has a schedule due right now
+        // 1. Check medication alerts
         for (const med of medications) {
           if (med.isSpecialCondition) continue;
 
@@ -208,11 +262,29 @@ export default function App() {
             }
           }
         }
+
+        // 2. Check routine / meal alerts
+        for (const r of routines) {
+          if (r.reminderEnabled && r.time === currentHHMM) {
+            const isAlreadyDone = routineLogs.some(
+              (rl) => rl.date === today && rl.routineId === r.id && rl.status === 'completed'
+            );
+            if (!isAlreadyDone) {
+              if (soundEnabled) {
+                soundManager.playReminderAlert();
+              }
+              sendBrowserNotification(
+                `Routine & Meal Notice: ${r.title}`,
+                `Scheduled for ${formatTime24to12(r.time)}: ${r.description || 'Daily routine event'}`
+              );
+            }
+          }
+        }
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [medications, logs, soundEnabled]);
+  }, [medications, logs, routines, routineLogs, soundEnabled]);
 
   // Request browser notification permission once gently
   useEffect(() => {
@@ -228,6 +300,11 @@ export default function App() {
     return getDailyDoseItems(currentDate, medications, logs);
   }, [currentDate, medications, logs]);
 
+  // Compute daily routine items for the selected date
+  const dailyRoutineItems = useMemo(() => {
+    return getDailyRoutineItems(currentDate, routines, routineLogs);
+  }, [currentDate, routines, routineLogs]);
+
   const specialMedications = useMemo(() => {
     return medications.filter((m) => m.isSpecialCondition);
   }, [medications]);
@@ -236,8 +313,9 @@ export default function App() {
     return dailyItems.filter((i) => i.isSpecialDose);
   }, [dailyItems]);
 
-  // Filter items based on activeFilter
-  const filteredDailyItems = useMemo(() => {
+  // Filter doses based on activeFilter
+  const filteredDailyDoses = useMemo(() => {
+    if (activeFilter === 'routines') return [];
     if (activeFilter === 'pending') {
       return dailyItems.filter((i) => i.status === 'pending');
     }
@@ -250,12 +328,26 @@ export default function App() {
     if (activeFilter === 'special') {
       return dailyItems.filter((i) => i.isSpecialDose);
     }
-    return dailyItems; // 'all'
+    return dailyItems; // 'all' or 'medications'
   }, [dailyItems, activeFilter]);
 
-  // Group items by time period for chronological structure
-  const groupedItems = useMemo(() => {
-    const groups: Record<TimeSlot, DailyDoseItem[]> = {
+  // Filter routines based on activeFilter
+  const filteredDailyRoutines = useMemo(() => {
+    if (activeFilter === 'medications' || activeFilter === 'special' || activeFilter === 'skipped') {
+      return [];
+    }
+    if (activeFilter === 'pending') {
+      return dailyRoutineItems.filter((r) => r.status === 'pending');
+    }
+    if (activeFilter === 'taken') {
+      return dailyRoutineItems.filter((r) => r.status === 'completed');
+    }
+    return dailyRoutineItems; // 'all' or 'routines'
+  }, [dailyRoutineItems, activeFilter]);
+
+  // Unified items grouped by time slot, strictly sorted by time
+  const groupedUnifiedItems = useMemo(() => {
+    const groups: Record<TimeSlot, UnifiedSlotItem[]> = {
       morning: [],
       afternoon: [],
       evening: [],
@@ -263,17 +355,37 @@ export default function App() {
       custom: [],
     };
 
-    filteredDailyItems.forEach((item) => {
-      const slot = item.schedule?.slot || getTimeSlotFromTime(item.scheduledTime);
-      if (groups[slot]) {
-        groups[slot].push(item);
-      } else {
-        groups.morning.push(item);
-      }
+    // Add doses
+    filteredDailyDoses.forEach((d) => {
+      const slot = d.schedule?.slot || getTimeSlotFromTime(d.scheduledTime);
+      const targetSlot = groups[slot] ? slot : 'morning';
+      groups[targetSlot].push({
+        type: 'dose',
+        item: d,
+        time: d.scheduledTime,
+      });
+    });
+
+    // Add routines
+    filteredDailyRoutines.forEach((r) => {
+      const slot = getTimeSlotFromTime(r.scheduledTime);
+      const targetSlot = groups[slot] ? slot : 'morning';
+      groups[targetSlot].push({
+        type: 'routine',
+        item: r,
+        time: r.scheduledTime,
+      });
+    });
+
+    // Sort each group chronologically by time
+    (Object.keys(groups) as TimeSlot[]).forEach((slotKey) => {
+      groups[slotKey].sort((a, b) => a.time.localeCompare(b.time));
     });
 
     return groups;
-  }, [filteredDailyItems]);
+  }, [filteredDailyDoses, filteredDailyRoutines]);
+
+  const totalFilteredCount = filteredDailyDoses.length + filteredDailyRoutines.length;
 
   // Handlers for Dose Status (Mark Taken / Skip / Undo)
   const handleUpdateDoseStatus = (
@@ -329,6 +441,73 @@ export default function App() {
         return [...prevLogs, newLog];
       }
     });
+  };
+
+  // Routine Status Handler (Toggle between completed and pending)
+  const handleToggleRoutine = (item: DailyRoutineItem) => {
+    setRoutineLogs((prevLogs) => {
+      const existingIdx = prevLogs.findIndex(
+        (l) => l.date === currentDate && l.routineId === item.routine.id
+      );
+
+      const isCurrentlyDone = item.status === 'completed';
+      const newStatus: RoutineStatus = isCurrentlyDone ? 'pending' : 'completed';
+
+      if (newStatus === 'completed' && soundEnabled) {
+        soundManager.playSuccessChime();
+      }
+
+      if (existingIdx >= 0) {
+        const updated = [...prevLogs];
+        const updatedLog: RoutineLog = {
+          ...updated[existingIdx],
+          status: newStatus,
+          completedAt: newStatus === 'completed' ? new Date().toISOString() : undefined,
+        };
+        updated[existingIdx] = updatedLog;
+        apiSaveRoutineLog(updatedLog).catch(() => {});
+        return updated;
+      } else {
+        const newLog: RoutineLog = {
+          id: `rlog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          routineId: item.routine.id,
+          date: currentDate,
+          status: newStatus,
+          completedAt: newStatus === 'completed' ? new Date().toISOString() : undefined,
+        };
+        apiSaveRoutineLog(newLog).catch(() => {});
+        return [...prevLogs, newLog];
+      }
+    });
+  };
+
+  // Routine CRUD Handlers
+  const handleSaveRoutine = (routineData: RoutineItem) => {
+    setRoutines((prev) => {
+      const idx = prev.findIndex((r) => r.id === routineData.id);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = routineData;
+        return copy;
+      } else {
+        return [...prev, routineData];
+      }
+    });
+    apiSaveRoutine(routineData).catch((err) => console.warn('API routine save error:', err));
+  };
+
+  const handleDeleteRoutine = (routineId: string) => {
+    setRoutines((prev) => prev.filter((r) => r.id !== routineId));
+    setRoutineLogs((prev) => prev.filter((l) => l.routineId !== routineId || l.status === 'completed'));
+    apiDeleteRoutine(routineId).catch((err) => console.warn('API routine delete error:', err));
+  };
+
+  const handleEditRoutine = (routineId: string) => {
+    const target = routines.find((r) => r.id === routineId);
+    if (target) {
+      setEditingRoutine(target);
+      setIsRoutineModalOpen(true);
+    }
   };
 
   // Special Dose confirmation handler
@@ -397,7 +576,10 @@ export default function App() {
   const handleResetSampleData = () => {
     localStorage.removeItem('med_reminder_medications_v1');
     localStorage.removeItem('med_reminder_logs_v1');
+    localStorage.removeItem('med_reminder_routines_v1');
+    localStorage.removeItem('med_reminder_routine_logs_v1');
     setMedications(INITIAL_SAMPLE_MEDICATIONS);
+    setRoutines(INITIAL_SAMPLE_ROUTINES);
     const today = getTodayDateString();
     const seededLogs: DoseLog[] = [
       {
@@ -413,7 +595,18 @@ export default function App() {
         notes: 'Taken before breakfast with 250ml water',
       },
     ];
+    const seededRoutineLogs: RoutineLog[] = [
+      {
+        id: 'routine-log-seed-1',
+        routineId: 'routine-1',
+        date: today,
+        status: 'completed',
+        completedAt: `${today}T06:20:00`,
+        notes: 'Had oatmeal with blueberries and warm lemon water',
+      },
+    ];
     setLogs(seededLogs);
+    setRoutineLogs(seededRoutineLogs);
     apiResetSamples().catch(() => {});
   };
 
@@ -434,7 +627,7 @@ export default function App() {
       }
     } else {
       soundManager.playTestTone();
-      alert('Reminder chime tested! Add a scheduled medication to test the full alarm banner.');
+      alert('Reminder chime tested! Add a scheduled medication or meal to test the alarm.');
     }
   };
 
@@ -445,10 +638,78 @@ export default function App() {
     timeRange: string,
     icon: React.ReactNode,
     bgClass: string,
-    borderClass: string
+    borderClass: string,
+    alwaysShow: boolean = false
   ) => {
-    const items = groupedItems[slotKey];
-    if (items.length === 0) return null;
+    const items = groupedUnifiedItems[slotKey];
+    if (items.length === 0) {
+      if (!alwaysShow) return null;
+      return (
+        <div id={`section-${slotKey}`} className="space-y-3">
+          <div className="flex items-center justify-between pt-2 pb-1">
+            <div className="flex items-center gap-2">
+              <div className={`p-1.5 rounded-lg border ${bgClass} ${borderClass}`}>
+                {icon}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+                <p className="text-[11px] text-slate-500 font-medium">{timeRange}</p>
+              </div>
+            </div>
+            <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2.5 py-0.5 rounded-full">
+              4th Daily Period
+            </span>
+          </div>
+
+          <div className="p-4 rounded-xl border border-dashed border-purple-300 bg-purple-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3 text-purple-900">
+              <div className="w-9 h-9 rounded-xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700 shrink-0">
+                <Moon className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Night & Bedtime Schedule</p>
+                <p className="text-[11px] text-slate-600">
+                  Ready for your nighttime doses (e.g. 10:00 PM cholesterol / sleep medicine) or evening water routine
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMedication(null);
+                  setAddModalAsSpecial(false);
+                  setAddModalDefaultSlot('night');
+                  setIsAddModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs inline-flex items-center justify-center gap-1 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Add Night Medication</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingRoutine({
+                    id: '',
+                    title: 'Bedtime Wind Down & Night Water',
+                    category: 'sleep',
+                    time: '22:00',
+                    description: 'Bedtime routine with glass of water and nighttime tablets',
+                    reminderEnabled: true,
+                    createdAt: '',
+                  });
+                  setIsRoutineModalOpen(true);
+                }}
+                className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 font-semibold text-xs transition-colors"
+              >
+                + Add Bedtime Routine
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div id={`section-${slotKey}`} className="space-y-3">
@@ -464,25 +725,39 @@ export default function App() {
             </div>
           </div>
           <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
-            {items.length} {items.length === 1 ? 'dose' : 'doses'}
+            {items.length} {items.length === 1 ? 'event' : 'events'}
           </span>
         </div>
 
         {/* List of cards */}
         <div className="space-y-2.5">
-          {items.map((item) => (
-            <DoseCard
-              key={item.logId}
-              item={item}
-              onUpdateStatus={handleUpdateDoseStatus}
-              onOpenEditMed={(medId) => {
-                const target = medications.find((m) => m.id === medId);
-                if (target) setEditingMedication(target);
-              }}
-              onOpenSkipModal={(it) => setSkipModalItem(it)}
-              onDeleteMedication={handleDeleteMedication}
-            />
-          ))}
+          {items.map((entry) => {
+            if (entry.type === 'dose') {
+              return (
+                <DoseCard
+                  key={`dose-${entry.item.logId}`}
+                  item={entry.item}
+                  onUpdateStatus={handleUpdateDoseStatus}
+                  onOpenEditMed={(medId) => {
+                    const target = medications.find((m) => m.id === medId);
+                    if (target) setEditingMedication(target);
+                  }}
+                  onOpenSkipModal={(it) => setSkipModalItem(it)}
+                  onDeleteMedication={handleDeleteMedication}
+                />
+              );
+            } else {
+              return (
+                <RoutineCard
+                  key={`routine-${entry.item.logId}`}
+                  item={entry.item}
+                  onToggleStatus={handleToggleRoutine}
+                  onEditRoutine={handleEditRoutine}
+                  onDeleteRoutine={handleDeleteRoutine}
+                />
+              );
+            }
+          })}
         </div>
       </div>
     );
@@ -500,6 +775,10 @@ export default function App() {
           setAddModalAsSpecial(false);
           setIsAddModalOpen(true);
         }}
+        onOpenAddRoutineModal={() => {
+          setEditingRoutine(null);
+          setIsRoutineModalOpen(true);
+        }}
         onOpenManageModal={() => setIsManageModalOpen(true)}
         onOpenPrintModal={() => setIsPrintModalOpen(true)}
         soundEnabled={soundEnabled}
@@ -516,34 +795,48 @@ export default function App() {
         {/* Top Progress & Daily Regimen Overview */}
         <DailyOverview
           items={dailyItems}
+          routineItems={dailyRoutineItems}
           specialMedsCount={specialMedications.length}
           activeFilter={activeFilter}
           onFilterChange={setActiveFilter}
           onQuickTakeDose={(item) => handleUpdateDoseStatus(item, 'taken')}
+          onQuickCompleteRoutine={(routineItem) => handleToggleRoutine(routineItem)}
         />
 
         {/* Core Timeline Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* Left / Main Column: Daily Dose Schedule Cards */}
+          {/* Left / Main Column: Daily Schedule Cards */}
           <div className="lg:col-span-8 space-y-6">
             
-            {filteredDailyItems.length === 0 ? (
+            {totalFilteredCount === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto">
                   <Sparkles className="w-6 h-6" />
                 </div>
                 <h3 className="text-base font-bold text-slate-900">
                   {activeFilter === 'all'
-                    ? 'No Medications Scheduled'
-                    : `No ${activeFilter.toUpperCase()} Doses Found`}
+                    ? 'No Schedule Found for Today'
+                    : `No ${activeFilter.toUpperCase()} Events Found`}
                 </h3>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
                   {activeFilter === 'all'
-                    ? 'Create your first morning or evening medication schedule with custom before/after meal timing.'
-                    : 'You can switch back to "All Doses" to see all scheduled items for today.'}
+                    ? 'Create your daily schedule by adding your medications with before/after meal rules, or by scheduling breakfast, meals, snacks, and hydration routines.'
+                    : 'You can switch back to "All Events" to view your complete daily medication and meal timeline.'}
                 </p>
-                {activeFilter === 'all' ? (
+                <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingRoutine(null);
+                      setIsRoutineModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition-colors"
+                  >
+                    <Utensils className="w-4 h-4" />
+                    <span>Add Meal / Routine</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -554,24 +847,26 @@ export default function App() {
                     className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-xs transition-colors"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Add First Medication</span>
+                    <span>Add Medication</span>
                   </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setActiveFilter('all')}
-                    className="text-xs font-bold text-teal-700 underline"
-                  >
-                    View All Doses
-                  </button>
-                )}
+
+                  {activeFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveFilter('all')}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 px-3 py-2"
+                    >
+                      View All Events
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="space-y-6">
                 {/* Morning Slot */}
                 {renderTimePeriodSection(
                   'morning',
-                  'Morning Routine',
+                  'Morning Routine & Meals',
                   '5:00 AM – 11:59 AM',
                   <Sunrise className="w-4 h-4 text-amber-600" />,
                   'bg-amber-50',
@@ -581,7 +876,7 @@ export default function App() {
                 {/* Afternoon Slot */}
                 {renderTimePeriodSection(
                   'afternoon',
-                  'Afternoon Routine',
+                  'Afternoon Routine & Meals',
                   '12:00 PM – 4:59 PM',
                   <Sun className="w-4 h-4 text-orange-600" />,
                   'bg-orange-50',
@@ -591,21 +886,22 @@ export default function App() {
                 {/* Evening Slot */}
                 {renderTimePeriodSection(
                   'evening',
-                  'Evening Routine',
+                  'Evening Routine & Dinner',
                   '5:00 PM – 8:59 PM',
                   <Sunset className="w-4 h-4 text-indigo-600" />,
                   'bg-indigo-50',
                   'border-indigo-200'
                 )}
 
-                {/* Night / Bedtime Slot */}
+                {/* Night / Bedtime Slot (Always rendered so all 4 schedules are always clear) */}
                 {renderTimePeriodSection(
                   'night',
                   'Night & Bedtime Routine',
                   '9:00 PM – 4:59 AM',
                   <Moon className="w-4 h-4 text-purple-600" />,
                   'bg-purple-50',
-                  'border-purple-200'
+                  'border-purple-200',
+                  true
                 )}
 
                 {/* Custom / Other */}
@@ -620,17 +916,17 @@ export default function App() {
               </div>
             )}
 
-            {/* Quick Helper Tip Box */}
-            <div className="bg-teal-50/70 border border-teal-200/80 rounded-2xl p-4 flex items-start gap-3">
-              <div className="p-2 rounded-xl bg-teal-100/80 text-teal-800 shrink-0">
+            {/* Quick Patient Meal & Routine Rule Tip Box */}
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-amber-100/80 text-amber-800 shrink-0">
                 <Utensils className="w-4 h-4" />
               </div>
-              <div className="text-xs text-slate-600 space-y-1">
-                <h4 className="font-bold text-teal-950">Patient Meal Timing Rule:</h4>
+              <div className="text-xs text-slate-700 space-y-1">
+                <h4 className="font-bold text-amber-950">Patient Meal & Medication Timing Protocol:</h4>
                 <p>
-                  <strong className="text-slate-800">Before Eating:</strong> Take 30 minutes before your meal on an empty stomach with a full glass of water.
+                  <strong className="text-slate-900">Before Eating:</strong> Take 30 minutes before your meal on an empty stomach with a full glass of water.
                   <br />
-                  <strong className="text-slate-800">After Eating:</strong> Take 20-30 minutes after finishing food to protect your stomach.
+                  <strong className="text-slate-900">After Eating:</strong> Take 20-30 minutes after completing your meal or snack to protect your stomach lining.
                 </p>
               </div>
             </div>
@@ -664,6 +960,53 @@ export default function App() {
               </h3>
 
               <div className="space-y-2">
+                {/* Add Night Schedule (Direct Quick Action) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingMedication(null);
+                    setAddModalAsSpecial(false);
+                    setAddModalDefaultSlot('night');
+                    setIsAddModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-purple-300 bg-purple-50/40 hover:bg-purple-100/60 text-left transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-200 text-purple-800 flex items-center justify-center group-hover:bg-purple-700 group-hover:text-white transition-colors">
+                      <Moon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-purple-950 flex items-center gap-1.5">
+                        <span>Add Night Schedule</span>
+                        <span className="text-[10px] px-1.5 py-0.2 bg-purple-200 text-purple-800 rounded font-semibold">9 PM – 4 AM</span>
+                      </p>
+                      <p className="text-[11px] text-purple-800/80">Schedule bedtime dose, 10 PM tablet, or tea</p>
+                    </div>
+                  </div>
+                  <Plus className="w-4 h-4 text-purple-600 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+
+                {/* Add Meal / Routine */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingRoutine(null);
+                    setIsRoutineModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-amber-200 hover:border-amber-300 hover:bg-amber-50/50 text-left transition-colors group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                      <Utensils className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-900">Add Meal or Routine</p>
+                      <p className="text-[11px] text-slate-500">Schedule 6 AM breakfast, 9 AM meal, walk, water</p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Add Medication */}
                 <button
                   type="button"
                   onClick={() => {
@@ -684,6 +1027,7 @@ export default function App() {
                   </div>
                 </button>
 
+                {/* Manage Medications */}
                 <button
                   type="button"
                   onClick={() => setIsManageModalOpen(true)}
@@ -700,6 +1044,7 @@ export default function App() {
                   </div>
                 </button>
 
+                {/* Print Refrigerator Routine */}
                 <button
                   type="button"
                   onClick={() => setIsPrintModalOpen(true)}
@@ -757,11 +1102,25 @@ export default function App() {
           setIsAddModalOpen(false);
           setEditingMedication(null);
           setAddModalAsSpecial(false);
+          setAddModalDefaultSlot('morning');
         }}
         onSave={handleSaveMedication}
         onDelete={handleDeleteMedication}
         initialMedication={editingMedication}
         defaultAsSpecial={addModalAsSpecial}
+        defaultTimeSlot={addModalDefaultSlot}
+      />
+
+      {/* Create / Edit Routine & Meal Modal */}
+      <RoutineModal
+        isOpen={isRoutineModalOpen}
+        onClose={() => {
+          setIsRoutineModalOpen(false);
+          setEditingRoutine(null);
+        }}
+        onSave={handleSaveRoutine}
+        onDelete={handleDeleteRoutine}
+        initialRoutine={editingRoutine}
       />
 
       {/* Manage Medications Drawer / Modal */}
@@ -785,6 +1144,7 @@ export default function App() {
         isOpen={isPrintModalOpen}
         onClose={() => setIsPrintModalOpen(false)}
         medications={medications}
+        routines={routines}
       />
 
       {/* Record Special Dose Modal */}

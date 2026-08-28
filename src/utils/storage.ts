@@ -1,8 +1,19 @@
-import { Medication, DoseLog, DailyDoseItem, DoseStatus } from '../types.ts';
+import { 
+  Medication, 
+  DoseLog, 
+  DailyDoseItem, 
+  DoseStatus,
+  RoutineItem,
+  RoutineLog,
+  DailyRoutineItem,
+  RoutineStatus
+} from '../types.ts';
 import { getTodayDateString } from './helpers.ts';
 
 const STORAGE_KEY_MEDS = 'med_reminder_medications_v1';
 const STORAGE_KEY_LOGS = 'med_reminder_logs_v1';
+const STORAGE_KEY_ROUTINES = 'med_reminder_routines_v1';
+const STORAGE_KEY_ROUTINE_LOGS = 'med_reminder_routine_logs_v1';
 const STORAGE_KEY_REMINDER_SETTINGS = 'med_reminder_settings_v1';
 
 export interface ReminderSettings {
@@ -110,18 +121,18 @@ export const INITIAL_SAMPLE_MEDICATIONS: Medication[] = [
     dosage: '20 mg (1 Tablet)',
     form: 'tablet',
     color: 'indigo',
-    instructions: 'Take once nightly after dinner for cholesterol management.',
+    instructions: 'Take once nightly at bedtime with water for cholesterol management.',
     doctorName: 'Dr. Evelyn Ward (Cardiology)',
     inventoryCount: 30,
     isSpecialCondition: false,
     schedules: [
       {
         id: 'sch-4-1',
-        time: '20:30',
-        slot: 'evening',
-        label: 'Evening Lipid Support',
-        mealRelation: 'after_meal',
-        mealName: 'Dinner',
+        time: '21:30',
+        slot: 'night',
+        label: 'Night / Bedtime Lipid Support',
+        mealRelation: 'anytime',
+        mealName: 'Bedtime',
         reminderEnabled: true,
         reminderMinutesBefore: 0,
         soundEnabled: true,
@@ -161,6 +172,69 @@ export const INITIAL_SAMPLE_MEDICATIONS: Medication[] = [
   },
 ];
 
+export const INITIAL_SAMPLE_ROUTINES: RoutineItem[] = [
+  {
+    id: 'routine-1',
+    title: 'Breakfast',
+    category: 'meal',
+    time: '06:00',
+    description: 'Light healthy breakfast (oatmeal, eggs, or toast with warm water)',
+    iconKey: 'coffee',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'routine-2',
+    title: 'Morning Snack / Second Meal',
+    category: 'snack',
+    time: '09:00',
+    description: 'Fresh fruits, yogurt, or handful of nuts with a glass of water',
+    iconKey: 'apple',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'routine-3',
+    title: 'Lunch',
+    category: 'meal',
+    time: '13:00',
+    description: 'Wholesome lunch with vegetables and lean protein',
+    iconKey: 'utensils',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'routine-4',
+    title: 'Afternoon Hydration & Tea',
+    category: 'hydration',
+    time: '17:00',
+    description: 'Herbal tea or 500ml water and light walk/stretching',
+    iconKey: 'droplet',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'routine-5',
+    title: 'Dinner',
+    category: 'meal',
+    time: '19:30',
+    description: 'Comforting evening meal before night medications',
+    iconKey: 'utensils',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+  {
+    id: 'routine-6',
+    title: 'Bedtime Wind-Down & Water',
+    category: 'sleep',
+    time: '21:30',
+    description: 'Glass of water, dim lights, and prepare for restful sleep',
+    iconKey: 'moon',
+    reminderEnabled: true,
+    createdAt: '2026-08-01T08:00:00.000Z',
+  },
+];
+
 export function getStoredMedications(): Medication[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY_MEDS);
@@ -169,7 +243,31 @@ export function getStoredMedications(): Medication[] {
       return INITIAL_SAMPLE_MEDICATIONS;
     }
     const parsed = JSON.parse(data);
-    return Array.isArray(parsed) ? parsed : INITIAL_SAMPLE_MEDICATIONS;
+    if (Array.isArray(parsed)) {
+      // Migrate med-4 (Atorvastatin) if it was on evening 20:30 so it now has night schedule
+      const migrated = parsed.map((m: Medication) => {
+        if (m.id === 'med-4' && m.schedules.some((s) => s.time === '20:30')) {
+          return {
+            ...m,
+            instructions: 'Take once nightly at bedtime with water for cholesterol management.',
+            schedules: m.schedules.map((s) =>
+              s.time === '20:30'
+                ? {
+                    ...s,
+                    time: '21:30',
+                    slot: 'night' as const,
+                    label: 'Night / Bedtime Lipid Support',
+                    mealName: 'Bedtime',
+                  }
+                : s
+            ),
+          };
+        }
+        return m;
+      });
+      return migrated;
+    }
+    return INITIAL_SAMPLE_MEDICATIONS;
   } catch {
     return INITIAL_SAMPLE_MEDICATIONS;
   }
@@ -300,5 +398,85 @@ export function getDailyDoseItems(
   // Sort chronologically by scheduled time
   result.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
 
+  return result;
+}
+
+export function getStoredRoutines(): RoutineItem[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY_ROUTINES);
+    if (!data) {
+      saveRoutines(INITIAL_SAMPLE_ROUTINES);
+      return INITIAL_SAMPLE_ROUTINES;
+    }
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : INITIAL_SAMPLE_ROUTINES;
+  } catch {
+    return INITIAL_SAMPLE_ROUTINES;
+  }
+}
+
+export function saveRoutines(routines: RoutineItem[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_ROUTINES, JSON.stringify(routines));
+  } catch (err) {
+    console.error('Failed to save routines to localStorage:', err);
+  }
+}
+
+export function getStoredRoutineLogs(): RoutineLog[] {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY_ROUTINE_LOGS);
+    if (!data) {
+      // Pre-seed completed breakfast for today as a positive demonstration
+      const today = getTodayDateString();
+      const initialRoutineLogs: RoutineLog[] = [
+        {
+          id: 'routine-log-seed-1',
+          routineId: 'routine-1',
+          date: today,
+          status: 'completed',
+          completedAt: `${today}T06:20:00`,
+          notes: 'Had oatmeal with blueberries and warm lemon water',
+        },
+      ];
+      saveRoutineLogs(initialRoutineLogs);
+      return initialRoutineLogs;
+    }
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveRoutineLogs(logs: RoutineLog[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEY_ROUTINE_LOGS, JSON.stringify(logs));
+  } catch (err) {
+    console.error('Failed to save routine logs to localStorage:', err);
+  }
+}
+
+export function getDailyRoutineItems(
+  date: string,
+  routines: RoutineItem[],
+  logs: RoutineLog[]
+): DailyRoutineItem[] {
+  const result: DailyRoutineItem[] = [];
+  const dateLogs = logs.filter((l) => l.date === date);
+
+  routines.forEach((routine) => {
+    const existingLog = dateLogs.find((l) => l.routineId === routine.id);
+    result.push({
+      logId: existingLog?.id || `temp-routine-${routine.id}-${date}`,
+      routine,
+      scheduledTime: routine.time,
+      status: existingLog ? existingLog.status : 'pending',
+      completedAt: existingLog?.completedAt,
+      notes: existingLog?.notes,
+    });
+  });
+
+  result.sort((a, b) => a.scheduledTime.localeCompare(b.scheduledTime));
   return result;
 }
