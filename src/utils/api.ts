@@ -5,7 +5,7 @@ export interface DbStatusResponse {
   configured: boolean;
   databaseName?: string;
   maskedUri?: string;
-  storageMode?: 'mongodb' | 'server_disk';
+  storageMode?: 'mongodb';
   lastSync?: string;
   error?: string;
   itemCounts?: {

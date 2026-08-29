@@ -232,11 +232,10 @@ export const MongoStatusModal: React.FC<MongoStatusModalProps> = ({
               <Server className="w-5 h-5 text-teal-700 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <h4 className="text-sm font-bold text-teal-950">
-                  Central Server Real-Time Sync Active
+                  Connect Your MongoDB Database
                 </h4>
                 <p className="text-teal-900">
-                  All devices (phones, tablets, laptops) already share the same live central server database. 
-                  Connect your MongoDB Atlas URI below to permanently persist records in your own cloud database.
+                  All medications, meal schedules, latrine logs, and dose logs sync directly to and from your MongoDB database. Connect your MongoDB Atlas URI below to activate direct database persistence.
                 </p>
               </div>
             </div>
