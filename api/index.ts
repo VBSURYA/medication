@@ -1,0 +1,236 @@
+import express from 'express';
+import dotenv from 'dotenv';
+import { 
+  getDatabaseStatus, 
+  getAllMedications, 
+  saveMedication, 
+  deleteMedication, 
+  getAllLogs, 
+  saveDoseLog, 
+  getAllRoutines,
+  saveRoutine,
+  deleteRoutine,
+  getAllRoutineLogs,
+  saveRoutineLog,
+  resetToSamples,
+  saveMongoUriConfig,
+  testMongoConnection,
+  disconnectMongo,
+  getAllDataSync
+} from '../server/mongodb.ts';
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(express.json());
+
+// 1. Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 2. Database connection status
+app.get('/api/db/status', async (req, res) => {
+  try {
+    const status = await getDatabaseStatus();
+    res.json(status);
+  } catch (err: any) {
+    res.status(500).json({ 
+      connected: false, 
+      configured: false, 
+      error: err.message || 'Failed to check database status' 
+    });
+  }
+});
+
+// 2b. Test MongoDB URI connection
+app.post('/api/db/test', async (req, res) => {
+  try {
+    const { uri } = req.body || {};
+    if (!uri) {
+      res.status(400).json({ ok: false, message: 'URI is required' });
+      return;
+    }
+    const testResult = await testMongoConnection(uri);
+    res.json(testResult);
+  } catch (err: any) {
+    res.status(500).json({ ok: false, message: err.message || 'Connection test failed' });
+  }
+});
+
+// 2c. Save and connect MongoDB URI dynamically
+app.post('/api/db/config', async (req, res) => {
+  try {
+    const { uri } = req.body || {};
+    if (!uri) {
+      res.status(400).json({ error: 'MongoDB connection URI is required' });
+      return;
+    }
+    const newStatus = await saveMongoUriConfig(uri);
+    res.json({ success: true, status: newStatus });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to configure MongoDB connection' });
+  }
+});
+
+// 2d. Disconnect MongoDB
+app.post('/api/db/disconnect', async (req, res) => {
+  try {
+    const status = await disconnectMongo();
+    res.json({ success: true, status });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to disconnect MongoDB' });
+  }
+});
+
+// 2e. Unified atomic synchronization endpoint for all connected devices
+app.get('/api/sync/all', async (req, res) => {
+  try {
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const data = await getAllDataSync(date);
+    res.json(data);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to synchronize all records' });
+  }
+});
+
+// 3. Medications API
+app.get('/api/medications', async (req, res) => {
+  try {
+    const meds = await getAllMedications();
+    res.json(meds);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve medications' });
+  }
+});
+
+app.post('/api/medications', async (req, res) => {
+  try {
+    const med = req.body;
+    if (!med || !med.id || !med.name) {
+      res.status(400).json({ error: 'Medication must have an id and name' });
+      return;
+    }
+    const saved = await saveMedication(med);
+    res.json(saved);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to save medication' });
+  }
+});
+
+app.delete('/api/medications/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      res.status(400).json({ error: 'Medication ID is required' });
+      return;
+    }
+    await deleteMedication(id);
+    res.json({ success: true, deletedId: id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete medication' });
+  }
+});
+
+// 4. Dose Logs API
+app.get('/api/logs', async (req, res) => {
+  try {
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const logs = await getAllLogs(date);
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve logs' });
+  }
+});
+
+app.post('/api/logs', async (req, res) => {
+  try {
+    const log = req.body;
+    if (!log || !log.id || !log.medicationId) {
+      res.status(400).json({ error: 'Log must have an id and medicationId' });
+      return;
+    }
+    const saved = await saveDoseLog(log);
+    res.json(saved);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to save dose log' });
+  }
+});
+
+// 5. Daily Routines & Meals API
+app.get('/api/routines', async (req, res) => {
+  try {
+    const routines = await getAllRoutines();
+    res.json(routines);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve routines' });
+  }
+});
+
+app.post('/api/routines', async (req, res) => {
+  try {
+    const routine = req.body;
+    if (!routine || !routine.id || !routine.title || !routine.time) {
+      res.status(400).json({ error: 'Routine must have an id, title, and time' });
+      return;
+    }
+    const saved = await saveRoutine(routine);
+    res.json(saved);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to save routine' });
+  }
+});
+
+app.delete('/api/routines/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      res.status(400).json({ error: 'Routine ID is required' });
+      return;
+    }
+    await deleteRoutine(id);
+    res.json({ success: true, deletedId: id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete routine' });
+  }
+});
+
+// 6. Routine Logs API
+app.get('/api/routine-logs', async (req, res) => {
+  try {
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const logs = await getAllRoutineLogs(date);
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to retrieve routine logs' });
+  }
+});
+
+app.post('/api/routine-logs', async (req, res) => {
+  try {
+    const log = req.body;
+    if (!log || !log.id || !log.routineId) {
+      res.status(400).json({ error: 'Routine log must have an id and routineId' });
+      return;
+    }
+    const saved = await saveRoutineLog(log);
+    res.json(saved);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to save routine log' });
+  }
+});
+
+// 7. Reset data endpoint
+app.post('/api/reset-samples', async (req, res) => {
+  try {
+    const result = await resetToSamples();
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to reset sample data' });
+  }
+});
+
+// Export default app for Vercel Serverless Function handler
+export default app;
